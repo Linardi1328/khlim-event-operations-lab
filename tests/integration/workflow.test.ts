@@ -135,6 +135,13 @@ describe("PostgreSQL operational truth", () => {
     expect(publicData).not.toContain("Synthetic Black");
     expect(publicData).not.toContain("passwordHash");
     expect(publicData).not.toContain("Score sheet");
+    await score(staffId, e.id, "FINAL", 22, 10, {
+      reason: "One missing basket reviewed; winner unchanged.",
+    });
+    state = (await getEvent(e.id))!;
+    expect(state.placements).toHaveLength(0);
+    expect(state.fixtures.filter((f) => current(f))).toHaveLength(16);
+    await command(staffId, e.id, { action: "confirmPlacements" });
     // Same-participant semifinal winner reversal safely blocks played descendants, then reconciles.
     await expect(
       score(staffId, e.id, "SF-1", 10, 21, {

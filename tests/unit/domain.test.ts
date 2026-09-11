@@ -44,6 +44,11 @@ describe("benchmark tournament domain", () => {
     expect(rows.find((t) => t.id === "b")).toMatchObject({ lost: 1, diff: -2 });
   });
   it("breaks ties by difference, then points scored, then visible seed", () => {
+    const differenceFirst = standings(teams, [
+      { homeId: "a", awayId: "b", result: { homeScore: 12, awayScore: 1 } },
+      { homeId: "c", awayId: "d", result: { homeScore: 21, awayScore: 20 } },
+    ]);
+    expect(differenceFirst[0].id).toBe("a");
     const result = standings(teams, [
       { homeId: "a", awayId: "b", result: { homeScore: 10, awayScore: 5 } },
       { homeId: "c", awayId: "d", result: { homeScore: 15, awayScore: 10 } },
