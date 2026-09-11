@@ -2166,3 +2166,194 @@ thead {
 .place-number {
   color: #687f4c;
 }
+
+/* V1 courtside navigation and compact information views. */
+.public-nav {
+  width: 100%;
+}
+.public-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+}
+.compact-hero {
+  padding-top: 24px;
+  padding-bottom: 26px;
+}
+.compact-hero h1 {
+  font-size: clamp(25px, 3vw, 38px);
+  letter-spacing: -1px;
+}
+.compact-hero .hero-eyebrow {
+  margin-bottom: 12px;
+}
+.public-header .button-row {
+  gap: 12px;
+}
+.public-guide h2 {
+  margin-bottom: 16px;
+}
+.public-guide > a {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.public-guide small {
+  display: block;
+  margin-top: 6px;
+  color: #59664e;
+}
+.public-guide svg {
+  flex-shrink: 0;
+}
+.overview-updates,
+.final-outcome,
+.pool-standings {
+  margin-top: 34px;
+}
+.overview-updates h3,
+.final-outcome h2,
+.score-groups h3 {
+  margin-bottom: 18px;
+}
+.public-pool ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.public-pool li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 14px 0;
+  font-weight: 650;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.pool-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #53683b;
+  flex-shrink: 0;
+}
+.pool-standings summary {
+  cursor: pointer;
+  min-height: 48px;
+  padding: 14px 0;
+  font-weight: 700;
+}
+.pool-standings > p {
+  color: #59664e;
+  font-size: 13px;
+  margin: 12px 0 22px;
+}
+.playoff-source,
+.progression-note {
+  font-size: 12px;
+  color: #59664e;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+.winner-caption {
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.playoff-placeholder p {
+  margin: 18px 0;
+}
+.playoff-placeholder small {
+  color: #59664e;
+}
+.public-game .score-display > div > strong {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.pool-assignment-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 28px;
+}
+.pool-assignment-list label {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.pool-assignment-list label span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.pool-assignment-list select {
+  width: 100px;
+  flex-shrink: 0;
+}
+.pool-composition {
+  margin-bottom: 22px;
+}
+.pool-composition ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.pool-composition li {
+  padding: 7px 0;
+  overflow-wrap: anywhere;
+}
+.substitute-field {
+  display: flex;
+  gap: 8px;
+}
+.substitute-field input {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .public-nav-wrap {
+    padding: 0 12px;
+  }
+  .public-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    overflow: visible;
+  }
+  .public-nav a {
+    padding: 16px 2px;
+    font-size: 11px;
+    min-height: 52px;
+  }
+  .compact-hero {
+    padding: 20px 18px;
+  }
+  .compact-hero h1 {
+    font-size: 26px;
+    line-height: 1.12;
+  }
+  .compact-hero .hero-eyebrow {
+    gap: 9px;
+  }
+  .public-header .button-row {
+    gap: 8px;
+  }
+  .public-game .game-meta {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .public-game .game-meta > span:first-child {
+    font-size: 11px;
+  }
+  .public-pool li {
+    font-size: 15px;
+  }
+  .pool-assignment-list {
+    grid-template-columns: 1fr;
+  }
+}
