@@ -1,8 +1,10 @@
 # KHLIM Event Operations Lab
 
-Astra Experiment #002: an isolated, disposable application for operating one synthetic one-day 3×3 basketball tournament, from registration to published final placements.
+Astra Experiment #002: an isolated Event OS experiment for operating one synthetic one-day 3×3 basketball tournament, from registration to published final placements. It produces tested domain logic, reusable scenarios and an explicit handoff for later human-reviewed adaptation into KHLIM Digital.
 
-**The implementation is disposable. The validated domain and workflow lessons are the experiment output. This does not establish production readiness.** The original experiment protocol remains in [ASTRA_EXPERIMENT.md](ASTRA_EXPERIMENT.md).
+**The application shell and lab scaffolding are disposable. Validated domain decisions, logic, test cases and integration lessons are the durable outputs. This does not establish production readiness or authorize production code reuse.** See [ASTRA_EXPERIMENT.md](ASTRA_EXPERIMENT.md) for the protocol.
+
+The parent project and future review destination is **KHLIM Digital Ecosystem, Event OS**, after Organization #001 / tenancy foundations are ready. No direct integration happens here; this lab must never become a second production source of truth. [INTEGRATION_HANDOFF.md](INTEGRATION_HANDOFF.md) maps candidates and required rework without accessing the Digital repository.
 
 ## Boundaries
 
@@ -113,6 +115,7 @@ GitHub Actions runs migrations and seed from a clean PostgreSQL service, all che
 
 ## Architecture and learning outputs
 
+- [INTEGRATION_HANDOFF.md](INTEGRATION_HANDOFF.md): reuse candidates, destination concepts and adoption gates.
 - [ARCHITECTURE.md](ARCHITECTURE.md): runtime, trust boundaries, transactions and workflow policy.
 - [DOMAIN_MODEL.md](DOMAIN_MODEL.md): authoritative records, projections, tiebreaks, lifecycle and corrections.
 - [MIGRATION_LESSONS.md](MIGRATION_LESSONS.md): what should survive the lab, what must not, and what remains unproven.

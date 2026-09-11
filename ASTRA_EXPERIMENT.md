@@ -2,9 +2,18 @@
 
 ## Objective
 
-Evaluate whether GPT Astra can autonomously design, implement, validate, and hand off a complete first version of a one-day KHLIM 3x3 tournament operations prototype from a minimal repository.
+Evaluate whether GPT Astra can autonomously design, implement, validate, and hand off a complete first version of a one-day KHLIM 3x3 tournament operations system from a minimal repository, while producing reusable Event OS components and integration knowledge for the KHLIM Digital Ecosystem.
 
-The experiment should teach KHLIM what event-day data, states, corrections, and operator workflows need to become durable domain truth before those concepts are implemented in the KHLIM Digital Ecosystem.
+This is an integration-focused subproject, not a throwaway demo.
+
+The standalone application shell may be temporary, but Astra should deliberately structure the tournament domain logic, state transitions, import rules, correction behavior, authorization scenarios, and tests so they can later be reviewed and selectively adapted into KHLIM Digital's Event OS.
+
+## Parent project and integration target
+
+**Parent project:** KHLIM Digital Ecosystem  
+**Target destination:** Event OS phase after the required Organization #001 / tenancy foundations are ready.
+
+Astra must not modify KHLIM Digital during this experiment. Integration happens only after human review of this subproject.
 
 ## Benchmark event
 
@@ -36,7 +45,7 @@ create event
 → publish results
 ```
 
-CSV import should be treated as a first-class grassroots workflow:
+CSV import is a first-class grassroots workflow:
 
 ```text
 upload
@@ -47,6 +56,24 @@ upload
 → human confirm
 → commit
 ```
+
+## Reusable outputs expected
+
+Astra should leave clearly identifiable, well-tested outputs that can later inform or accelerate KHLIM Digital implementation, including where appropriate:
+
+- event/tournament domain model;
+- benchmark fixture-generation logic;
+- standings and tiebreak logic;
+- qualifier and knockout advancement logic;
+- result lifecycle and correction behavior;
+- downstream reconciliation rules after corrections;
+- CSV import/validation/conflict handling;
+- authorization and negative test scenarios;
+- public event schedule/results UX lessons;
+- migration-ready test cases;
+- documentation mapping lab concepts to future KHLIM Digital concepts.
+
+Do not optimize for code copying at the expense of correctness. Production adoption must still respect KHLIM Digital's Organization, Athlete, Auth, Audit, Evidence, API, and data-ownership architecture.
 
 ## Experiment boundaries
 
@@ -63,6 +90,8 @@ Astra must not:
 - build a generalized every-format tournament engine;
 - add player rankings, scouting, individual performance analytics, AI, video, chat, merchandise, or autonomous operations;
 - require external paid services for normal local use.
+
+Lab authentication and synthetic participant identities are implementation scaffolding only and must not be treated as production-ready reusable identity infrastructure.
 
 ## Intervention policy
 
@@ -85,11 +114,19 @@ Any substantive human intervention should be recorded below.
 
 ## Intervention log
 
-_No substantive intervention recorded yet._
+- 11 September 2026: while implementation was in progress, upstream `main` received `a0447ba` (integration-focused framing) and `a15dc0e` (explicit integration handoff). The experiment branch incorporated these documentation changes and added `INTEGRATION_HANDOFF.md`. This clarified future review outputs; no Digital access, production integration, real data or implementation/debugging assistance occurred. The original request’s isolated synthetic scope was retained.
 
 ## Success standard
 
-The experiment succeeds only if Astra leaves a working, persisted, tested application that can run the complete synthetic tournament workflow, including authorized result correction and downstream recomputation, plus a mobile-first public schedule/results experience.
+The experiment succeeds only if Astra leaves a working, persisted, tested application that can run the complete synthetic tournament workflow, including authorized result correction and safe downstream reconciliation, plus a mobile-first public schedule/results experience.
+
+It must also leave an explicit integration handoff describing:
+
+- which domain concepts should be adopted into KHLIM Digital;
+- which logic/tests are suitable for direct adaptation;
+- which lab-only implementation shortcuts must be discarded;
+- what must be reworked to fit organization tenancy, canonical athlete identity, audit, evidence/provenance, and production auth;
+- unresolved risks or assumptions that should be tested before production use.
 
 Astra should complete its own engineering loop:
 
@@ -104,7 +141,7 @@ understand requirements
 → fix defects
 → responsive QA
 → lint/typecheck/build
-→ document findings
+→ document integration lessons
 → push experiment branch
 → open PR
 → do not merge
@@ -114,4 +151,4 @@ Expected implementation branch:
 
 `astra/initial-event-operations-build`
 
-The implementation can disappear. The validated event domain model and workflow lessons should survive.
+The application shell may disappear. Validated Event OS logic, tests, domain decisions, and integration lessons should survive into the parent project's future implementation.

@@ -99,4 +99,6 @@ Selected visual evidence:
 - [360px long-name standings](docs/qa/mobile-long-names.png)
 - [Explicit correction conflict](docs/qa/correction-conflict.png)
 
-No human intervention changed the experiment scope or product implementation. Routine tool sandbox approvals, dependency downloads and starting the local database were handled within the authorized lab work. No real data/credentials, production project, paid infrastructure or deployment was used.
+Upstream documentation changed during the run (`a0447ba`, `a15dc0e`) to emphasize future reuse and integration handoff. These protocol updates are recorded in ASTRA_EXPERIMENT.md and incorporated without Digital access or implementation/debugging assistance. Routine sandbox approvals, dependency downloads and local database startup stayed within authorized lab work. No real data/credentials, production project, paid infrastructure or deployment was used.
+
+The documented `pnpm db:reset --yes-lab-only` and `pnpm db:demo` commands also passed after the suite. The handoff environment contains a fresh registration seed plus a separately completed review event.
