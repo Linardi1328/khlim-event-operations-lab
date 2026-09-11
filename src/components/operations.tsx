@@ -277,14 +277,17 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
     checked = e.entries.filter((t) => t.checkedInAt).length,
     players = e.entries.flatMap((t) => t.roster),
     present = players.filter((p) => p.checkedInAt).length;
-  const ready =
-    draw &&
-    !formatIssues(e, count).length &&
-    confirmed === count &&
-    checked === count &&
-    e.entries.every((t) =>
-      t.roster.filter((p) => p.slot <= 3).every((p) => p.checkedInAt),
-    );
+  const scheduleReady =
+      count > 0 &&
+      draw &&
+      !formatIssues(e, count).length &&
+      confirmed === count,
+    attendanceReady =
+      count > 0 &&
+      checked === count &&
+      e.entries.every((t) =>
+        t.roster.filter((p) => p.slot <= 3).every((p) => p.checkedInAt),
+      );
   const steps = [
     {
       label: "Register, confirm & run official draw",
@@ -293,18 +296,18 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
       view: "teams",
     },
     {
-      label: "Check in teams & core players",
-      done: ready,
-      detail: `${checked} teams · ${present} players present`,
-      view: "teams",
-    },
-    {
-      label: "Create & publish the schedule",
+      label: "Create & publish the planned schedule",
       done: e.schedulePublished,
       detail: e.fixtures.length
         ? "Fixtures created"
         : `${preview.poolGames} pool games + ${preview.knockoutGames} playoff games`,
       view: "schedule",
+    },
+    {
+      label: "Event-day team & core-player check-in",
+      done: attendanceReady,
+      detail: `${checked} teams · ${present} players present`,
+      view: "teams",
     },
     {
       label: "Complete pool play",
@@ -405,7 +408,9 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
             <span className="eyebrow">NEXT AT THE DESK</span>
             <h2>
               {!e.fixtures.length
-                ? "Get everyone court-ready."
+                ? scheduleReady
+                  ? "Build the planned schedule."
+                  : "Finish registration and the draw."
                 : !poolDone
                   ? "Keep the scores moving."
                   : completed < total
@@ -414,7 +419,9 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
             </h2>
             <p>
               {!e.fixtures.length
-                ? "Confirm eligible rosters, run the official draw, then check in every team and their three core players."
+                ? scheduleReady
+                  ? "Generate and publish the planned schedule now. Team and player check-in can continue on event day without changing those fixtures."
+                  : "Confirm eligible rosters and run the official draw. Attendance check-in is not required to build the planned schedule."
                 : !poolDone
                   ? "Confirm each game once the score is agreed. Standings update with every result."
                   : "Review knockout results and sign off the final placements."}
@@ -424,7 +431,9 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
               href={`/ops/${e.id}?view=${!e.fixtures.length ? "teams" : !poolDone ? "schedule" : "knockout"}`}
             >
               {!e.fixtures.length
-                ? "Open team check-in"
+                ? scheduleReady
+                  ? "Review teams & draw"
+                  : "Open teams & draw"
                 : "Continue operations"}{" "}
               <ArrowUpRight size={16} />
             </Link>
@@ -441,8 +450,17 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
               {confirmed < count && (
                 <li>{count - confirmed} entries awaiting confirmation.</li>
               )}
-              {!ready && !e.fixtures.length && (
-                <li>Core player check-in must finish before scheduling.</li>
+              {!scheduleReady && !e.fixtures.length && (
+                <li>
+                  Confirm every entry and complete the official draw before
+                  scheduling.
+                </li>
+              )}
+              {e.fixtures.length > 0 && !attendanceReady && (
+                <li>
+                  Event-day check-in is still in progress; the planned schedule
+                  remains valid.
+                </li>
               )}
               {!e.public && <li>Event overview is hidden from the public.</li>}
               {e.fixtures.length > 0 && !e.schedulePublished && (
@@ -451,16 +469,16 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
               {completed === total && !e.placementsConfirmedAt && (
                 <li>Final placements need staff sign-off.</li>
               )}
-              {ready && e.schedulePublished && (
+              {scheduleReady && attendanceReady && e.schedulePublished && (
                 <li className="muted">
-                  No registration or scheduling blockers.
+                  No registration, attendance or scheduling blockers.
                 </li>
               )}
             </ul>
             {!e.fixtures.length && (
               <Button
                 busy={r.busy}
-                disabled={!ready}
+                disabled={!scheduleReady}
                 onClick={() =>
                   r.run(
                     `/api/events/${e.id}/command`,
