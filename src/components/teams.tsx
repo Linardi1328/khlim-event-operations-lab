@@ -16,7 +16,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
       .querySelector<HTMLInputElement>('input[name="name"]')
       ?.focus({ preventScroll: true });
   }, [edit]);
-  const locked = e.fixtures.length > 0;
+  const registrationLocked = e.fixtures.length > 0;
   const selected = e.entries.find((t) => t.id === edit);
   return (
     <div className="stack">
@@ -37,17 +37,17 @@ export function Teams({ event: e }: { event: EventDTO }) {
               Import CSV
             </Link>
             <Button
-              disabled={locked || e.entries.length >= e.maxTeams}
+              disabled={registrationLocked || e.entries.length >= e.maxTeams}
               onClick={() => setEdit("new")}
             >
               + Add team
             </Button>
           </div>
         </div>
-        {locked && (
+        {registrationLocked && (
           <div className="notice">
-            Registration and check-in are locked because fixtures exist. Rosters
-            and seed priorities remain fixed for this event.
+            Registration, rosters and the official draw are locked because
+            fixtures exist. Event-day team and player check-in remains available.
           </div>
         )}
         <Feedback request={r} />
@@ -172,7 +172,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
               </div>
               <button
                 className="icon-button"
-                disabled={locked}
+                disabled={registrationLocked}
                 onClick={() => setEdit(t.id)}
                 aria-label={`Edit ${t.name}`}
               >
@@ -197,7 +197,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
                   </div>
                   <button
                     className={`check-button ${p.checkedInAt ? "checked" : ""}`}
-                    disabled={locked || !t.confirmedAt || r.busy}
+                    disabled={!t.confirmedAt || r.busy}
                     aria-label={`${p.checkedInAt ? "Undo check-in" : "Check in"} ${p.name}`}
                     aria-pressed={!!p.checkedInAt}
                     onClick={() =>
@@ -224,7 +224,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
                 <Button
                   className="secondary"
                   busy={r.busy}
-                  disabled={locked}
+                  disabled={registrationLocked}
                   onClick={() =>
                     r.run(
                       `/api/events/${e.id}/command`,
@@ -238,7 +238,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
               ) : (
                 <button
                   className={`secondary ${t.checkedInAt ? "checked" : ""}`}
-                  disabled={locked || r.busy}
+                  disabled={r.busy}
                   aria-pressed={!!t.checkedInAt}
                   onClick={() =>
                     r.run(
@@ -266,8 +266,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
       </div>
       {!e.entries.length && (
         <Empty title="A fresh team sheet">
-          Add the first team or import the benchmark CSV to register all eight
-          teams.
+          Add the first team or import a sample CSV to start registration.
         </Empty>
       )}
     </div>
