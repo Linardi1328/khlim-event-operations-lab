@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Check, Pencil, Users } from "lucide-react";
 import type { EventDTO } from "./operations";
 import { Badge, Button, Empty, Feedback, useRequest } from "./ui";
+import { PoolAssignment } from "./pool-assignment";
 export function Teams({ event: e }: { event: EventDTO }) {
   const r = useRequest();
   const [edit, setEdit] = useState<string | null>(null);
@@ -51,6 +52,11 @@ export function Teams({ event: e }: { event: EventDTO }) {
               Cancel
             </button>
           </div>
+          <p className="muted">
+            Edit the three required core players below. Add a fourth player in
+            the substitute field, or clear that field to remove the substitute.
+            A core player must be replaced to keep three core players.
+          </p>
           <form
             key={edit}
             onSubmit={async (ev) => {
@@ -98,8 +104,8 @@ export function Teams({ event: e }: { event: EventDTO }) {
                     e.pools.find((p) => p.id === selected?.poolId)?.name ?? "A"
                   }
                 >
-                  <option>A</option>
-                  <option>B</option>
+                  <option value="A">Pool A</option>
+                  <option value="B">Pool B</option>
                 </select>
               </label>
               <label>
@@ -143,6 +149,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
           </form>
         </section>
       )}
+      <PoolAssignment event={e} />
       <div className="team-grid">
         {e.entries.map((t) => (
           <article className="team-card" key={t.id}>

@@ -218,6 +218,64 @@ export async function command(
       await tx.$queryRaw`SELECT id FROM "Event" WHERE id = ${eventId} FOR UPDATE`;
       let e = await fresh(tx, eventId);
       switch (action) {
+        case "assignPools": {
+          unlocked(e);
+          const { assignments } = z
+            .object({
+              assignments: z
+                .array(
+                  z.object({
+                    entryId: id,
+                    pool: z.enum(["A", "B"]),
+                    expectedPool: z.enum(["A", "B"]),
+                  }),
+                )
+                .length(8),
+            })
+            .parse(input);
+          if (
+            e.entries.length !== 8 ||
+            new Set(assignments.map((a) => a.entryId)).size !== 8 ||
+            assignments.some((a) => !e.entries.some((t) => t.id === a.entryId))
+          )
+            throw new DomainError(
+              "Assign each of this event's eight teams exactly once.",
+            );
+          if (
+            ["A", "B"].some(
+              (pool) => assignments.filter((a) => a.pool === pool).length !== 4,
+            )
+          )
+            throw new DomainError(
+              "Pool A and Pool B must each contain exactly four teams.",
+            );
+          const changes: string[] = [];
+          for (const a of assignments) {
+            const t = e.entries.find((t) => t.id === a.entryId)!;
+            const previous = e.pools.find((p) => p.id === t.poolId)!.name;
+            if (previous !== a.expectedPool)
+              throw new DomainError(
+                "Pool assignments changed since you opened this form. Cancel and reopen it to review the latest pools. Nothing has been changed.",
+                409,
+              );
+            if (previous !== a.pool) {
+              await tx.teamEntry.update({
+                where: { id: t.id },
+                data: { poolId: e.pools.find((p) => p.name === a.pool)!.id },
+              });
+              changes.push(`${t.name}: Pool ${previous} → Pool ${a.pool}`);
+            }
+          }
+          if (changes.length)
+            await audit(
+              tx,
+              eventId,
+              staffId,
+              "POOLS_ASSIGNED",
+              changes.join("; "),
+            );
+          break;
+        }
         case "saveEntry": {
           unlocked(e);
           const d = entrySchema.parse(input);
