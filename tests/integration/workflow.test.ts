@@ -229,7 +229,7 @@ describe("PostgreSQL operational truth", () => {
     ).rejects.toThrow("stale");
     expect(await db.teamEntry.count({ where: { eventId: other.id } })).toBe(1);
   });
-  it("gates scheduling, enforces roster and event ownership, and locks seeded roster priorities", async () => {
+  it("gates scheduling on a confirmed draw, keeps attendance operational after scheduling, and enforces event ownership", async () => {
     const e = await event();
     await expect(
       command(staffId, e.id, { action: "generateFixtures" }),
@@ -250,9 +250,37 @@ describe("PostgreSQL operational truth", () => {
       confirmed: true,
       expectedDrawVersion: null,
     });
-    await expect(
-      command(staffId, e.id, { action: "generateFixtures" }),
-    ).rejects.toThrow("check in");
+    let state = (await getEvent(e.id))!;
+    expect(state.entries.every((t) => t.checkedInAt === null)).toBe(true);
+    await command(staffId, e.id, { action: "generateFixtures" });
+    await command(staffId, e.id, {
+      action: "publish",
+      field: "schedulePublished",
+      value: true,
+    });
+    state = (await getEvent(e.id))!;
+    expect(state.fixtures).toHaveLength(16);
+    expect(state.schedulePublished).toBe(true);
+    expect(state.entries.every((t) => t.checkedInAt === null)).toBe(true);
+    const first = state.entries[0];
+    await command(staffId, e.id, {
+      action: "checkIn",
+      entryId: first.id,
+      checked: true,
+    });
+    await command(staffId, e.id, {
+      action: "checkIn",
+      entryId: first.id,
+      playerId: first.roster[0].id,
+      checked: true,
+    });
+    state = (await getEvent(e.id))!;
+    expect(state.entries.find((t) => t.id === first.id)!.checkedInAt).not.toBeNull();
+    expect(
+      state.entries
+        .find((t) => t.id === first.id)!
+        .roster.find((p) => p.id === first.roster[0].id)!.checkedInAt,
+    ).not.toBeNull();
     const other = await event();
     const t = await db.teamEntry.findFirstOrThrow({ where: { eventId: e.id } });
     await expect(
