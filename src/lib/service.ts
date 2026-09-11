@@ -80,7 +80,7 @@ async function fresh(tx: Tx, eventId: string) {
 function unlocked(e: EventData) {
   if (e.fixtures.length)
     throw new DomainError(
-      "Entries and check-in are locked once fixtures exist. Use a fresh event to change registration.",
+      "Registration and draw changes are locked once fixtures exist. Use a fresh event to change the tournament structure.",
     );
 }
 function entryErrors(
@@ -553,7 +553,6 @@ export async function command(
           break;
         }
         case "checkIn": {
-          unlocked(e);
           const d = z
             .object({
               entryId: id,
@@ -605,16 +604,9 @@ export async function command(
             throw new DomainError(
               `Invalid pool composition. ${issues.join(" ")}`,
             );
-          if (
-            e.entries.some(
-              (t) =>
-                !t.confirmedAt ||
-                !t.checkedInAt ||
-                t.roster.filter((p) => p.slot <= 3).some((p) => !p.checkedInAt),
-            )
-          )
+          if (e.entries.some((t) => !t.confirmedAt))
             throw new DomainError(
-              "Confirm every entry and check in every team and all three core players first.",
+              "Confirm every eligible entry before generating fixtures.",
             );
           const poolGames = e.pools
             .flatMap((p) =>
