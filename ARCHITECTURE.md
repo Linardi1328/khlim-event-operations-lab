@@ -41,17 +41,18 @@ Read pages are dynamic and uncached. PostgreSQL reads are the source of truth; b
 
 ## Command gates
 
-| Action                       | Required state                                             | Result                                                                |
-| ---------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------- |
-| Save/import entries          | No fixtures                                                | Valid new roster, or edited roster with confirmation/check-in reset   |
-| Confirm entry                | Valid 3–4 player roster                                    | Confirmation timestamp and actor audit                                |
-| Check in                     | Entry confirmed; no fixtures                               | Team/player presence timestamp and actor audit                        |
-| Generate schedule            | 8 confirmed teams, 4/pool, teams + 3 core players present  | 12 immutable pool games + 4 linked knockout slots; registration locks |
-| Record score                 | Two qualified, distinct participants; valid unequal scores | Confirmed result; standings and descendants recomputed                |
-| Correct score                | Exact previous revision + reason                           | New revision and correction; old score preserved                      |
-| Resolve dangerous correction | Explicit authorized replay after conflict review           | Affected results voided; descendants repopulated; sign-off removed    |
-| Confirm placements           | All 16 games have current results                          | Unique complete 1–8 order and sign-off timestamp                      |
-| Publish results              | Generated and published schedule                           | Public scores/standings; signed-off placements if available           |
+| Action                       | Required state                                                       | Result                                                                |
+| ---------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Save/import entries          | No fixtures                                                          | Valid new roster, or edited roster with confirmation/check-in reset   |
+| Assign pools                 | No fixtures; all 8 entries; exactly 4 per pool; original pools match | Atomic pool changes and actor audit; roster/attendance retained       |
+| Confirm entry                | Valid 3–4 player roster                                              | Confirmation timestamp and actor audit                                |
+| Check in                     | Entry confirmed; no fixtures                                         | Team/player presence timestamp and actor audit                        |
+| Generate schedule            | 8 confirmed teams, 4/pool, teams + 3 core players present            | 12 immutable pool games + 4 linked knockout slots; registration locks |
+| Record score                 | Two qualified, distinct participants; valid unequal scores           | Confirmed result; standings and descendants recomputed                |
+| Correct score                | Exact previous revision + reason                                     | New revision and correction; old score preserved                      |
+| Resolve dangerous correction | Explicit authorized replay after conflict review                     | Affected results voided; descendants repopulated; sign-off removed    |
+| Confirm placements           | All 16 games have current results                                    | Unique complete 1–8 order and sign-off timestamp                      |
+| Publish results              | Generated and published schedule                                     | Public scores/standings; signed-off placements if available           |
 
 No result is stored as a client draft. Typing scores is an unsaved form; clicking Confirm creates the authoritative fact. An event phase is derived from its state; no independently editable phase flag can contradict the games.
 
@@ -80,3 +81,9 @@ The dashboard exposes completion gates and blockers. Staff can filter court sche
 ## Operational limitations
 
 This experiment does not test physical-event officiating, connectivity outages, overtime rules, walkovers, weather delays or schedule adjustments. There is no queued offline mutation, polling or push feed; use Refresh. Roster edits and check-in lock when scheduling, so late substitutes require a different future policy. The app is single-process local-first, not a production incident, backup, retention or disaster-recovery design.
+
+## V1 refinement
+
+No database migration or new results store was required. `assignPools` uses the existing Event row lock, validates the complete eight-entry assignment set and capacity, compares each submitted `expectedPool` with current persisted assignment, and updates only `TeamEntry.poolId`. Any invalid/stale entry rolls the entire transaction back. The form retains its original assignments across refreshes. `POOLS_ASSIGNED` records actor/time and old/new pools. Rosters, confirmation and attendance are unchanged. Fixture generation still independently checks four teams in each pool, and any existing fixture blocks reassignment.
+
+The public shell has five views: Overview, Pools, Schedule, Scores, Playoffs. It receives the existing explicit public DTO; no roster or staff object crosses that boundary. Counts and status use published facts. Pool lists derive from entry pool IDs; completed-score cards use the same current GameResult projection as schedules. The benchmark's four playoff source labels describe progression without a bracket engine. Final placements appear within Playoffs and the champion appears on Overview. Standings remain expandable in Pools; announcements remain on Overview. Legacy public query links redirect to these views.

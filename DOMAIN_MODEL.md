@@ -81,3 +81,9 @@ With the sample pool scores, Amber has three wins. Black initially beats Lime 18
 Before knockouts: update SF-2 (B1 versus A2) to Lime. After SF-2 has been played: identify that its participant snapshot conflicts. If its output fed played final/third games, they also conflict. Reject the first correction atomically; staff may explicitly void and replay those affected games. SF-1 remains intact. All histories retain the old teams/scores/actors/times/reasons. All placement sign-off is withdrawn.
 
 A semifinal correction with the same teams but a changed winner similarly invalidates played medal descendants. A correction that changes only points without changing any downstream participants retains those games, but still requires fresh placement sign-off.
+
+## V1 pool management and public views
+
+Pool assignment remains an authoritative field on each TeamEntry, not a second membership table. Staff can atomically rebalance all eight entries before fixtures exist, including swapping two full pools. Exactly four entries per pool, eight distinct event entry IDs and original-pool preconditions are mandatory. Assignment changes are audited and retain roster/attendance facts; after scheduling they are rejected, with a fresh event as the prototype's safe alternative. No new schema was necessary.
+
+Public Pools and Scores are projections, never independent stores. Pools groups permitted team fields by their persisted pool ID. Scores includes only published current results, distinguishing numeric zero from missing/unpublished results. Public status uses visible facts rather than the private operational phase. Public Playoffs is the display name for the existing knockout domain. Placement authority, result revisions and reconciliation rules are unchanged.

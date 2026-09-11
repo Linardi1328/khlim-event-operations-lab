@@ -50,7 +50,7 @@ Concurrent operators add another requirement: the correction form must identify 
 
 Public views should be explicit projections with their own privacy contract. Testing caught a spread of a full TeamEntry object into a standings row, carrying synthetic roster names into serialized public data despite hiding them visually. Explicit field selection and serialization tests fixed it. A hidden button or omitted visible text is not a privacy boundary.
 
-Mobile participants need court/time, opponent, current score, standings/progression and announcements. A compact standings table and stacked knockout stages work for this benchmark; desktop-style horizontal bracket sprawl is unnecessary. Blank and zero results must remain distinct. Publication decisions should explain empty states (“not published yet”) rather than imply there are no games.
+Players, parents and spectators primarily need their pool, next game, scores and playoff position. V1 therefore uses Overview / Pools / Schedule / Scores / Playoffs. Plain team lists answer pool membership faster than a standings table; standings remain expandable. Completed scores deserve a dedicated view. Stacked semifinal and medal-game cards communicate progression on a phone. Announcements and final placement records remain useful without occupying their own navigation tabs. Blank and zero results must remain distinct. Publication decisions should explain empty states (“not published yet”) rather than imply there are no games.
 
 ## Shortcuts that must never migrate
 
@@ -86,3 +86,11 @@ Resolve global athlete identity through the future canonical system; keep event-
 7. Establish backup/restore, published-result versioning, audit retention and incident handling requirements before any production implementation.
 
 No unresolved production questions are answered merely because this synthetic suite is green.
+
+## V1 scope and pool-editing lesson
+
+Prioritize **ADMIN: team/player setup → pool assignment → schedule → scores → playoffs** and **PUBLIC: pools → schedule → scores → playoffs** for the first production-oriented KHLIM Event OS slice. Staff own roster entry. Public player rosters, detailed profiles, statistics, participant login and broader FIBA-style features are deferred. This prioritization is a product hypothesis supported by synthetic workflow/browser checks, not a measured courtside usability study.
+
+Two full pools reveal why changing a single team at a time is insufficient: moving the first team temporarily creates five entries in the destination. A reviewed, atomic whole-composition update lets staff swap teams without invalid intermediate persisted state. Original-pool comparisons reject stale edits; capacity and entry ownership are validated again under the event lock. Changing only the pool should not erase attendance or create new roster identities. The prototype safely blocks all reassignment once fixtures exist. Later policy needs organization-owned draw approval, publication/version history and deliberate rescheduling/reconciliation; do not carry over a silent reset.
+
+The public data contract needed no expansion for this refinement. Removing public navigation items did not justify deleting announcements, standings, placement sign-off or correction history. Keep authoritative facts stable while adapting participant-facing projections. Production adaptation still waits for Organization #001 / tenancy, canonical identity resolution and evidence/provenance integration described above.

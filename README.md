@@ -76,7 +76,7 @@ The reset refuses non-loopback hosts, a database name other than `khlim_lab`, or
 
 1. Sign in at `/login`; select the seeded event, or create a fresh event from **Your events**.
 2. Use **Teams & check-in** to add/edit rosters, or **CSV import** to register a fresh event using [benchmark-teams.csv](public/samples/benchmark-teams.csv). The existing seed already contains these entries, so importing the full sample there correctly reports duplicates.
-3. Review validation, pool and seed priority, then **Confirm entry** for each team. Check in the team and each of its three core players. Substitute check-in is optional.
+3. In **Teams & check-in → Manage pools**, review both four-team lists. Reassign teams together (for example Black to B and Blue to A), then **Save pool assignments**. Both pools must contain four teams; changes are atomic and stale forms are rejected. Pool-only changes preserve roster confirmation and attendance. Review seed priority, then **Confirm entry** for each team. Check in the team and each of its three core players. Substitute check-in is optional.
 4. **Generate fixtures** from Overview or Schedule & scores. Entries, pools, seeds and check-in now lock. The two court schedules use 15-minute pool slots, semifinals at 11:00, third place at 11:30 and final at 12:00 MYT.
 5. In **Public event**, publish the overview, schedule and scores/standings. These are separate controls. Unpublishing the schedule also unpublishes scores. Add/hide announcements here.
 6. In **Schedule & scores**, enter and confirm all 12 results. Blank means no result; `0–1` is a valid score. Tied, fractional, negative and over-50 scores are rejected. Use [pool-results.csv](public/samples/pool-results.csv) as a manual exercise sheet (score import is outside scope).
@@ -85,7 +85,19 @@ The reset refuses non-loopback hosts, a database name other than `khlim_lab`, or
 9. **Confirm final placements**. Public results include all eight places once scores are published and staff have signed off.
 10. Use **Activity & corrections** to inspect original, superseded and voided results and recent staff actions.
 
-Public pages require no sign-in. They expose event information, schedule, scores, standings, progression, announcements and confirmed placements, without player rosters or staff details. Refresh controls fetch fresh persisted state; the prototype does not push live updates.
+Public pages require no sign-in. The V1 navigation is **Overview · Pools · Schedule · Scores · Playoffs**:
+
+- **Overview:** event name/date/venue, publication-aware status, actual team count, next scheduled games, champion after sign-off, and event-desk updates.
+- **Pools:** authoritative Pool A/B team lists, with optional expandable standings underneath. No public player rosters.
+- **Schedule:** published fixtures with time, court, opponents, stage and status; a simple court filter.
+- **Scores:** only published completed results, grouped by pool, semifinals and medal games. A legitimate `0` is shown; an unplayed game is absent here and has an em dash in Schedule.
+- **Playoffs:** A1/B2 and B1/A2 semifinals, winners/losers advancing to final/third-place game, and staff-confirmed final placements.
+
+Old public standings/knockout/placements/announcements links redirect to the corresponding V1 view. Announcements and placements remain durable capabilities without separate navigation tabs. Refresh fetches current PostgreSQL state; the prototype does not push live updates.
+
+Staff own all team/player setup. Open **Edit [team]** to change core players, enter an optional substitute, or clear the substitute field to remove that player. Three core players are mandatory; removing one requires a replacement. Roster saves reset confirmation/check-in and are blocked after fixtures exist. Pool assignments also lock once fixtures exist; use a fresh event for a different pool structure, preserving the original games/history.
+
+The first production-oriented Event OS slice should prioritize **ADMIN: team/player setup → pool assignment → schedule → scores → playoffs**, and **PUBLIC: pools → schedule → scores → playoffs**. Public rosters, player profiles/statistics, player authentication and broader FIBA-style functionality are deferred. Selective adaptation into KHLIM Digital remains conditional on Organization #001 / tenancy foundations and human review.
 
 ## Correct a result
 
