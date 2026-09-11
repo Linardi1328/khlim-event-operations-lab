@@ -15,7 +15,7 @@ The standalone application shell may be temporary, but Astra should deliberately
 
 Astra must not modify KHLIM Digital during this experiment. Integration happens only after human review of this subproject.
 
-## Benchmark event
+## Original benchmark event (retained as a regression case)
 
 Use one synthetic tournament:
 
@@ -29,12 +29,19 @@ Use one synthetic tournament:
 - 3-player core rosters with an optional substitute;
 - synthetic participants only.
 
+## Authorized refinement boundary — 11 September 2026
+
+The founder's FORMAT FLEXIBILITY + LIVE EVENT OPERATIONS refinement supersedes the fixed eight-team/two-pool boundary above. This remains a 3×3 prototype, not a generalized every-sport format engine. Configurable formats, top-three imported FIBA-inspired seeding, audited random pot draws, long/wide CSV mapping, versioned standings, explicit KHLIM walkovers, generalized bracket graphs and staff-approved live schedule projections are now in scope. Imported/invented ranking-point snapshots are seeding inputs only; no public player-ranking product, scraping or official ranking-point award is authorized.
+
+Public V1 remains Overview / Pools / Schedule / Scores / Playoffs, with no rosters or player accounts. The same isolation, synthetic-data, production-access and integration-review boundaries remain binding. Existing played events retain their original rule policy/history. See DOMAIN_MODEL.md for the new versioned semantics and safety limits.
+
 ## Required operational journey
 
 ```text
 create event
 → register/import teams
-→ validate rosters
+→ validate and confirm rosters
+→ run official draw
 → check in teams/players
 → publish pool fixtures
 → enter results
@@ -114,7 +121,9 @@ Any substantive human intervention should be recorded below.
 
 ## Intervention log
 
-_No substantive intervention recorded yet._
+- 11 September 2026: while implementation was in progress, upstream `main` received `a0447ba` (integration-focused framing) and `a15dc0e` (explicit integration handoff). The experiment branch incorporated these documentation changes and added `INTEGRATION_HANDOFF.md`. This clarified future review outputs; no Digital access, production integration, real data or implementation/debugging assistance occurred. The original request’s isolated synthetic scope was retained.
+
+- 11 September 2026: the founder explicitly requested the public V1 scope refinement and then the substantial format-flexibility/live-operations refinement. These are scope interventions, not implementation/debugging assistance. They replace the original fixed-format/manual-pool assumption while preserving isolated synthetic operation and the existing PR. No production integration or external Event Twin/FIBA data access was introduced.
 
 ## Success standard
 

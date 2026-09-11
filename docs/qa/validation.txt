@@ -1,0 +1,111 @@
+
+> khlim-event-operations-lab@0.1.0 validate /Users/richie/khlim-event-operations-lab
+> pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e
+
+
+> khlim-event-operations-lab@0.1.0 lint /Users/richie/khlim-event-operations-lab
+> eslint .
+
+
+> khlim-event-operations-lab@0.1.0 typecheck /Users/richie/khlim-event-operations-lab
+> next typegen && tsc --noEmit
+
+Generating route types...
+✓ Types generated successfully
+
+> khlim-event-operations-lab@0.1.0 test /Users/richie/khlim-event-operations-lab
+> vitest run tests/unit
+
+
+ RUN  v3.2.7 /Users/richie/khlim-event-operations-lab
+
+ ✓ tests/unit/domain.test.ts (24 tests) 10ms
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  09:09:52
+   Duration  257ms (transform 36ms, setup 0ms, collect 42ms, tests 10ms, environment 0ms, prepare 42ms)
+
+
+> khlim-event-operations-lab@0.1.0 test:integration /Users/richie/khlim-event-operations-lab
+> vitest run tests/integration
+
+
+ RUN  v3.2.7 /Users/richie/khlim-event-operations-lab
+
+(node:26189) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ ✓ tests/integration/workflow.test.ts (5 tests) 2159ms
+   ✓ PostgreSQL operational truth > operates all 16 games, reconciles the Black/Lime correction and handles dangerous corrections with audited replay  1211ms
+   ✓ PostgreSQL operational truth > rejects stale score writers, no reason, invalid scores and database-level self matches  509ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  09:09:53
+   Duration  2.56s (transform 91ms, setup 0ms, collect 183ms, tests 2.16s, environment 0ms, prepare 42ms)
+
+
+> khlim-event-operations-lab@0.1.0 build /Users/richie/khlim-event-operations-lab
+> prisma generate && next build
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated Prisma Client (7.10.0) to ./src/generated/prisma in 83ms
+
+▲ Next.js 16.3.4 (Turbopack)
+- Environments: .env
+✓ Running next.config.ts took 17ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 557ms
+  Running TypeScript ...
+  Finished TypeScript in 2.0s ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/6) ...
+  Generating static pages using 9 workers (1/6) 
+  Generating static pages using 9 workers (2/6) 
+  Generating static pages using 9 workers (4/6) 
+✓ Generating static pages using 9 workers (6/6) in 157ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ○ /_not-found
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/events
+├ ƒ /api/events/[id]/command
+├ ƒ /api/public/[slug]
+├ ƒ /events/[slug]
+├ ○ /login
+├ ƒ /ops
+└ ƒ /ops/[id]
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+
+> khlim-event-operations-lab@0.1.0 test:e2e /Users/richie/khlim-event-operations-lab
+> playwright test
+
+[WebServer] (node:26278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26295) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 1 worker
+
+(node:26324) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:26295) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+  ✓  1 tests/e2e/tournament.spec.ts:64:1 › complete staff workflow: create, CSV review, check-in, scores, correction, knockout and public mobile (13.0s)
+(node:26324) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+  ✓  2 tests/e2e/tournament.spec.ts:285:1 › dangerous browser correction blocks until staff explicitly authorizes replay (4.4s)
+  ✓  3 tests/e2e/tournament.spec.ts:347:1 › public access, authorization, CSRF, hidden data, failed import and responsive long names (3.4s)
+  ✓  4 tests/e2e/tournament.spec.ts:468:1 › an open correction stays stale after refresh and public publication toggles take effect (3.0s)
+  ✓  5 tests/e2e/tournament.spec.ts:529:1 › staff maps source columns before import and long team names fit public mobile tables (3.5s)
+
+  5 passed (29.6s)
