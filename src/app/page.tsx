@@ -34,7 +34,7 @@ export default async function Home() {
               <Badge tone="lime">3×3 BASKETBALL</Badge>
               <h2>{e.name}</h2>
               <p>
-                {eventDate(e.startsAt)} · {e.venue}
+                {eventDate(e.startsAt, e.timezone)} · {e.venue}
               </p>
               <span className="event-card-bottom">
                 Explore event <span>↗</span>

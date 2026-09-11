@@ -1,26 +1,19 @@
 # KHLIM Event Operations Lab
 
-Astra Experiment #002: an isolated Event OS experiment for operating one synthetic one-day 3×3 basketball tournament, from registration to published final placements. It produces tested domain logic, reusable scenarios and an explicit handoff for later human-reviewed adaptation into KHLIM Digital.
+Astra Experiment #002, refined into a flexible **3×3 Event OS prototype**. Operate synthetic tournaments from registration and a witnessed seeded draw through schedules, scores, live recovery, playoffs and final placements. The standalone shell is disposable; validated domain decisions, modules, tests and integration lessons are the durable outputs.
 
-**The application shell and lab scaffolding are disposable. Validated domain decisions, logic, test cases and integration lessons are the durable outputs. This does not establish production readiness or authorize production code reuse.** See [ASTRA_EXPERIMENT.md](ASTRA_EXPERIMENT.md) for the protocol.
+**Isolated lab only.** No KHLIM Digital code, credentials, databases or infrastructure are used or modified. No production deployment, paid services, AI, payments, membership, real athletes, public rosters or player accounts. Lab participant IDs must never become canonical Athlete identities. Selective future adaptation waits for **Organization #001 / tenancy foundations**, human review, production Auth, Audit and Evidence integration. See [experiment boundaries](ASTRA_EXPERIMENT.md) and [integration handoff](INTEGRATION_HANDOFF.md).
 
-The parent project and future review destination is **KHLIM Digital Ecosystem, Event OS**, after Organization #001 / tenancy foundations are ready. No direct integration happens here; this lab must never become a second production source of truth. [INTEGRATION_HANDOFF.md](INTEGRATION_HANDOFF.md) maps candidates and required rework without accessing the Digital repository.
+## Local setup
 
-## Boundaries
-
-Synthetic events, teams, participants and staff only. No KHLIM production data, credentials, databases, APIs or infrastructure. No integration with KHLIM Digital Ecosystem. No payments, memberships, real registration, AI, video, scouting, rankings or production deployment. No paid service is required. Lab participant IDs must **never** be migrated as canonical athlete identities.
-
-## Run locally
-
-Requirements: Node.js **24**, pnpm **10.15.0**, Docker with Compose (or an isolated PostgreSQL 17 database), and Git. Use the Node version in `.nvmrc`; newer Node majors are outside the validated baseline.
+Node **24**, pnpm **10.15.0**, Docker Compose / isolated PostgreSQL **17**:
 
 ```bash
-nvm use                       # or activate Node 24 with your version manager
+nvm use
 corepack enable
 corepack prepare pnpm@10.15.0 --activate
 pnpm install --frozen-lockfile
 cp .env.example .env
-# Start Docker Desktop first if necessary.
 docker compose up -d --wait db
 pnpm db:generate
 pnpm db:migrate
@@ -28,86 +21,56 @@ pnpm db:seed
 pnpm dev
 ```
 
-Open **[http://127.0.0.1:3000](http://127.0.0.1:3000)**. Use this hostname consistently: the lab checks request Origin against `APP_ORIGIN`. The application and Docker database bind to loopback. PostgreSQL is on **54329**, using its own `lab_postgres` volume.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Use that hostname consistently: Origin must match `APP_ORIGIN`. App and DB bind to loopback; the dedicated PostgreSQL volume uses port **54329**. No external service is required.
 
-Disposable synthetic staff credentials:
+Disposable staff sign-in: **`event.staff` / `LabOnly!3x3`**. Passwords are hashed with scrypt; eight-hour PostgreSQL sessions use hashed random tokens and HttpOnly/SameSite=Strict cookies. Credentials are intentionally public lab fixtures. Never deploy or migrate this authentication.
 
-- Username: **`event.staff`**
-- Password: **`LabOnly!3x3`**
+For local production-mode validation: `pnpm build && pnpm start`. Stop an existing server before rebuilding or starting another.
 
-This is deliberately lab-only authentication: a seeded account with a salted scrypt password hash, database-backed eight-hour sessions, and an HttpOnly SameSite=Strict cookie. Credentials are intentionally public. Never deploy this authentication or reuse its credentials in KHLIM Digital.
+## Review data and reset
 
-For the production-mode **local** server:
+- `pnpm db:seed`: repeatable, preserves existing events. Creates an eight-team event with four synthetic players per team, invented ranking-point values, two empty pools, and staff. Confirm entries and run the draw yourself.
+- `pnpm db:demo`: adds a completed eight-team review event, including a score correction.
+- `pnpm db:demo:flex`: adds **18 teams / 4 unequal pools / 12 playoff qualifiers / 3 courts**, with draw provenance, a walkover, approved twelve-minute delay propagation and completed pool/play-in/quarterfinal games. Finish the semifinals and medal games yourself.
+- `pnpm db:demo:flex --complete`: adds the same format with all results and placements confirmed.
+- `pnpm db:reset --yes-lab-only`: deletes **all events and sessions** in the exact localhost `khlim_lab` DB and reseeds. Demo/reset scripts reject other DB targets. Creating a fresh event preserves prior history and is usually preferable.
 
-```bash
-pnpm build
-pnpm start
-```
+Existing V1 events retain their original participants, results, planned times and `LEGACY_V1` standings. New events use the policies below. An unscheduled legacy event can enter the new policy only through an explicit official draw; played history is never silently reinterpreted.
 
-`APP_ORIGIN` must match the URL used by your browser. Changing it requires restarting the app. Nothing in this repository deploys the application.
+## Operate an event
 
-## What is seeded
+1. **Create event:** name, date, venue, IANA timezone, planned start, expected/max entries, pools, courts, automatic qualifiers, wildcards, playoff field and timing policy. The preview calculates balanced pool sizes, pool games, playoff games and byes. Actual confirmed entries govern the draw; expected count is a plan.
+2. **Teams & check-in:** staff enter/edit three core players and an optional substitute. Record imported/staff-entered lab FIBA ranking points, or zero for unranked players. Names detect synthetic conflicts, not real identity. Saving an entry resets its confirmation/presence and invalidates an existing draw.
+3. **CSV import:** upload → inspect layout/header suggestions → review/correct mappings → validate/preview → confirm → atomic commit. [Long example](public/samples/benchmark-teams.csv) and [wide example](public/samples/wide-teams.csv) are examples, not required organizer schemas. Extra columns, including obsolete pool/seed fields, are ignored and listed. Unknown/ambiguous columns require human mapping. No partial commits.
+4. Confirm eligible entries, then **Run official draw**. Seeds use the sum of each team's three highest player point values; equal totals get a random audited order. Seeded pots distribute randomly across pools, with sizes differing by at most one. There is no manual pool or seed input. Redraw requires confirmation and a reason, retaining previous versions; any fixture blocks redraw.
+5. Check in each team and its three core players. **Generate fixtures** creates arbitrary-size pool round robins and the linked playoff graph across configured courts. Registration/check-in now lock.
+6. In **Public event**, publish overview, schedule and results separately. Unpublishing schedule also hides results. Announcements remain available without a primary navigation tab.
+7. **Schedule & scores:** confirm played scores or explicitly record a **Walkover** with winner/reason. Walkovers display **21–0** and remain distinguishable from played scores. Blank is no result; zero is a valid score. Tied/fractional/negative/over-50 scores are rejected.
+8. **Live timing & schedule recovery:** observe actual start/end, or select a court delay → calculate impact → review old/new estimates → explicitly approve. Planned times remain fixed; approved projections respect court turnaround, team rest and round dependencies. Stale proposals must be recalculated. Public pages update on refresh.
+9. Confirm all pool results. Automatic and best-remaining qualifiers derive from standings. Brackets support 4/8/16/32 and intermediate fields via byes/play-ins. Higher qualification positions receive byes; the first round avoids same-pool opponents where the deterministic allocation permits.
+10. Complete playoff rounds, optional third-place game and final. **Confirm final placements** only after every result. Review corrections, draw inputs, timing observations and operator history in the staff surfaces.
 
-`pnpm db:seed` is repeatable and does not overwrite an existing event. It creates:
+### Policies and corrections
 
-- KHLIM One-Day 3×3, 10 October 2026, Kuala Lumpur, 09:00 MYT;
-- eight teams: Black, Lime, Amber, Coral, Blue, Violet, Teal, Silver;
-- two pools of four and 32 fictional roster entries (three core + one substitute each);
-- the disposable EVENT_STAFF account and a public welcome announcement;
-- court/time policy ready to generate 12 pool fixtures and four knockout slots.
+`FIBA_INSPIRED_V2`: wins → head-to-head **wins only** within tied pool groups → average points → event seed. Multi-team head-to-head uses a win-only mini-table and reapplies to a smaller tied subgroup. Each game's average contribution is capped at 21; a walkover winner's game is excluded from both numerator and denominator. Displayed PF/PA/PD still include the recorded 21–0. Cross-pool comparisons use **win ratio → average → seed**, never head-to-head or point difference. See [DOMAIN_MODEL.md](DOMAIN_MODEL.md) for exact qualification, bye and placement policy.
 
-The seeded event starts before entry confirmation and check-in, so a reviewer can operate it themselves. Optional completed review data:
+**Correct result** retains the old result ID, requires a reason and appends a revision. Reconciliation traverses the entire advancement graph. If a changed participant affects a played or started descendant, the first attempt lists conflicts and rolls back everything. Staff may explicitly authorize targeted void/replay; only affected descendants lose current results, old values remain in history, and placement sign-off is withdrawn. Replay and reconfirm. The original Black 18–16 Lime → Black 16–18 Lime case remains a migrated-event regression test; new official draws do not guarantee those teams share a pool or fixture code.
 
-```bash
-pnpm db:demo
-```
+This is **FIBA-inspired**, not certified Event Maker behavior. Top-three seeding uses invented/imported snapshots, not verified live rankings. Random pots differ from documented Event Maker snake examples; walkover 21–0 is a KHLIM display policy. No official ranking points are awarded, and no FIBA API is called. Official-rule interpretation and actual venue operations still need human review.
 
-This adds a **new** fully operated “KHLIM Matchday Review” event, using the same commands as the UI. It includes the Black/Lime correction, all games, placements and public results. It prints its public and staff URLs. The original seed event remains untouched. Each demo invocation creates another event.
+## Public V1
 
-To reset **all event data in this disposable local database** (including tests/demo events and sessions):
+**Overview · Pools · Schedule · Scores · Playoffs**, no sign-in:
 
-```bash
-pnpm db:reset --yes-lab-only
-```
+- Overview: event facts/status, team count, next games, champion after sign-off, updates.
+- Pools: authoritative team lists, matchup matrices and GP/W/L/PF/PA/PD/AVG/SEED tables with qualification markers. Tables scroll within the page on phones; player rosters and individual ranking points stay private.
+- Schedule: planned/estimated/actual times, court, teams, stage/status and one court filter.
+- Scores: only published completed results, grouped by each pool and playoff stage. Unplayed games never appear as 0–0.
+- Playoffs: dynamic round cards, source games, advancing winners, medal games and final placements.
 
-The reset refuses non-loopback hosts, a database name other than `khlim_lab`, or a missing confirmation flag. It reseeds the initial event, keeping the staff account. Do not point this application at a shared database. `docker compose stop` preserves the volume; a container or app restart does not reset tournament state.
+The production-oriented slice remains **ADMIN: team/player setup → official pool draw → schedule → scores → playoffs**, **PUBLIC: pools → schedule → scores → playoffs**. Public player profiles, statistics, rankings, registration and broader FIBA-style features remain deferred.
 
-## Operate a tournament
-
-1. Sign in at `/login`; select the seeded event, or create a fresh event from **Your events**.
-2. Use **Teams & check-in** to add/edit rosters, or **CSV import** to register a fresh event using [benchmark-teams.csv](public/samples/benchmark-teams.csv). The existing seed already contains these entries, so importing the full sample there correctly reports duplicates.
-3. In **Teams & check-in → Manage pools**, review both four-team lists. Reassign teams together (for example Black to B and Blue to A), then **Save pool assignments**. Both pools must contain four teams; changes are atomic and stale forms are rejected. Pool-only changes preserve roster confirmation and attendance. Review seed priority, then **Confirm entry** for each team. Check in the team and each of its three core players. Substitute check-in is optional.
-4. **Generate fixtures** from Overview or Schedule & scores. Entries, pools, seeds and check-in now lock. The two court schedules use 15-minute pool slots, semifinals at 11:00, third place at 11:30 and final at 12:00 MYT.
-5. In **Public event**, publish the overview, schedule and scores/standings. These are separate controls. Unpublishing the schedule also unpublishes scores. Add/hide announcements here.
-6. In **Schedule & scores**, enter and confirm all 12 results. Blank means no result; `0–1` is a valid score. Tied, fractional, negative and over-50 scores are rejected. Use [pool-results.csv](public/samples/pool-results.csv) as a manual exercise sheet (score import is outside scope).
-7. View **Pool standings**. Top two qualify after **both** pools finish. SF-1 = A1/B2; SF-2 = B1/A2. The fixtures populate automatically from confirmed results.
-8. Complete semifinals, then final and third-place games. Winners and losers propagate automatically.
-9. **Confirm final placements**. Public results include all eight places once scores are published and staff have signed off.
-10. Use **Activity & corrections** to inspect original, superseded and voided results and recent staff actions.
-
-Public pages require no sign-in. The V1 navigation is **Overview · Pools · Schedule · Scores · Playoffs**:
-
-- **Overview:** event name/date/venue, publication-aware status, actual team count, next scheduled games, champion after sign-off, and event-desk updates.
-- **Pools:** authoritative Pool A/B team lists, with optional expandable standings underneath. No public player rosters.
-- **Schedule:** published fixtures with time, court, opponents, stage and status; a simple court filter.
-- **Scores:** only published completed results, grouped by pool, semifinals and medal games. A legitimate `0` is shown; an unplayed game is absent here and has an em dash in Schedule.
-- **Playoffs:** A1/B2 and B1/A2 semifinals, winners/losers advancing to final/third-place game, and staff-confirmed final placements.
-
-Old public standings/knockout/placements/announcements links redirect to the corresponding V1 view. Announcements and placements remain durable capabilities without separate navigation tabs. Refresh fetches current PostgreSQL state; the prototype does not push live updates.
-
-Staff own all team/player setup. Open **Edit [team]** to change core players, enter an optional substitute, or clear the substitute field to remove that player. Three core players are mandatory; removing one requires a replacement. Roster saves reset confirmation/check-in and are blocked after fixtures exist. Pool assignments also lock once fixtures exist; use a fresh event for a different pool structure, preserving the original games/history.
-
-The first production-oriented Event OS slice should prioritize **ADMIN: team/player setup → pool assignment → schedule → scores → playoffs**, and **PUBLIC: pools → schedule → scores → playoffs**. Public rosters, player profiles/statistics, player authentication and broader FIBA-style functionality are deferred. Selective adaptation into KHLIM Digital remains conditional on Organization #001 / tenancy foundations and human review.
-
-## Correct a result
-
-Click **Correct result**, replace the scores and give a reason. The original score, staff actor and time remain in history. Open correction forms carry the original result ID; stale writes are rejected.
-
-Required example: A-5 initially has **Black 18–16 Lime**. Change it to **Black 16–18 Lime**. With the sample pool scores, Lime replaces Black as A2. Unplayed downstream fixtures update automatically.
-
-If affected knockout games already have results, the first attempt returns a conflict listing the affected games and **changes nothing**. Staff must check the explicit replay authorization and resubmit. Only affected results are marked VOIDED (never deleted); unplayed participants reconcile, unaffected games remain valid, and placement sign-off is withdrawn. Replay those games, reconfirm placements, then review the public event. This lab has no adjudication/appeal engine.
-
-## Validate
+## Validation
 
 ```bash
 pnpm exec playwright install chromium
@@ -117,20 +80,14 @@ pnpm test
 pnpm test:integration
 pnpm build
 pnpm test:e2e
-# Or all six checks in sequence:
+# all checks:
 pnpm validate
 ```
 
-Integration/browser tests create their own synthetic events in `khlim_lab` and remove them afterwards; the seeded event is preserved. Run one validation suite at a time. Playwright starts the production server if none is running; stop `pnpm dev` first when validating the production build. Tests use Chromium; optionally set `PLAYWRIGHT_CHROME_PATH` to an installed Chrome executable. Tests and migrations need a running PostgreSQL database.
+Tests create/remove their own synthetic events; run suites sequentially. Playwright starts `pnpm start` if needed; use a freshly built production server, not an old/dev server. Optional `PLAYWRIGHT_CHROME_PATH` selects installed Chrome. CI uses a fresh PostgreSQL service, migrations/seed and Chromium. [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md) records exact results and browser evidence.
 
-GitHub Actions runs migrations and seed from a clean PostgreSQL service, all checks, and production-server Playwright. Reports/traces/screenshots are uploaded as artifacts. See [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md) for coverage and recorded results.
+Technical bounds: up to 128 entries, 16 pools/courts, 32 playoff qualifiers, 1,024 pool fixtures, 512 imported player rows / 1 MB / 100 columns, 5–60 minute slots, 0–120 minute rest and 0–30 minute court turnaround. These bound a local prototype's work; they are not basketball rules. Schedule feasibility/end-of-day deadlines are not optimized automatically; organizers must review the generated schedule.
 
-## Architecture and learning outputs
+Known limits: format fixed after creation; entries/check-in lock on generation; no partial roster drafts/withdrawals, live push/offline queue, court-unavailability/team-lateness solver, cancellations, double forfeits, protest/adjudication engine or real-device/on-court trial. Recovery only moves unstarted estimates later; it does not optimize court swaps. Placement sign-off snapshots are replaced after corrections, not retained as publication versions. Lab staff share event-wide privileges. Green synthetic tests do not prove production readiness.
 
-- [INTEGRATION_HANDOFF.md](INTEGRATION_HANDOFF.md): reuse candidates, destination concepts and adoption gates.
-- [ARCHITECTURE.md](ARCHITECTURE.md): runtime, trust boundaries, transactions and workflow policy.
-- [DOMAIN_MODEL.md](DOMAIN_MODEL.md): authoritative records, projections, tiebreaks, lifecycle and corrections.
-- [MIGRATION_LESSONS.md](MIGRATION_LESSONS.md): what should survive the lab, what must not, and what remains unproven.
-- [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md): executable coverage, browser QA and validation evidence.
-
-Known boundaries: one fixed format; no forfeits, no-shows, cancellations, delays or rescheduling; entries/check-in lock when fixtures are created; names are only a lab conflict heuristic; no original-file evidence storage; no realtime/offline queue; no actual device or on-court trial. Places 5–8 are a documented comparison policy, not additional classification games. Staff share event-wide privileges. Never treat these shortcuts as production design approval.
+Further outputs: [architecture](ARCHITECTURE.md), [domain model](DOMAIN_MODEL.md), [migration lessons](MIGRATION_LESSONS.md), [integration handoff](INTEGRATION_HANDOFF.md).

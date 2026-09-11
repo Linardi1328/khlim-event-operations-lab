@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   ArrowUpRight,
-  Clock3,
   MapPin,
   RefreshCw,
   Megaphone,
@@ -14,6 +13,8 @@ import type { publicProjection } from "@/lib/query";
 import type { Serialized } from "@/lib/display";
 import { eventDate, eventTime } from "@/lib/display";
 import { Brand, Badge, Empty } from "./ui";
+import { stageNames } from "@/lib/competition/bracket";
+import { FixtureTime } from "./fixture-time";
 import { StandingsTable } from "./standings";
 type PublicData = Serialized<ReturnType<typeof publicProjection>>;
 type PublicFixture = PublicData["fixtures"][number];
@@ -24,27 +25,10 @@ const tabs = [
   ["scores", "Scores"],
   ["playoffs", "Playoffs"],
 ];
-const playoffSlots = [
-  { code: "SF-1", label: "Semifinal 1", home: "A1", away: "B2" },
-  { code: "SF-2", label: "Semifinal 2", home: "B1", away: "A2" },
-  {
-    code: "THIRD",
-    label: "Third-place game",
-    home: "Loser of Semifinal 1",
-    away: "Loser of Semifinal 2",
-  },
-  {
-    code: "FINAL",
-    label: "Final",
-    home: "Winner of Semifinal 1",
-    away: "Winner of Semifinal 2",
-  },
-];
 function stageLabel(f: PublicFixture) {
-  return (
-    playoffSlots.find((s) => s.code === f.code)?.label ??
-    `Pool ${f.code.split("-")[0]} · Game ${f.code.split("-")[1]}`
-  );
+  return f.stage === "POOL"
+    ? `Pool ${f.code.split("-")[0]} · Game ${f.code.split("-")[1]}`
+    : `${stageNames[f.stage]}${["FINAL", "THIRD"].includes(f.stage) ? "" : ` · ${f.code}`}`;
 }
 export function PublicEvent({
   event: e,
@@ -56,18 +40,23 @@ export function PublicEvent({
   const router = useRouter();
   const [court, setCourt] = useState("All courts");
   const done = e.fixtures.filter((f) => f.result);
-  const pending = e.fixtures.filter((f) => !f.result && f.homeId && f.awayId);
+  const pending = e.fixtures
+    .filter((f) => !f.result && f.homeId && f.awayId)
+    .sort(
+      (a, b) =>
+        Date.parse(a.projectedStartsAt) - Date.parse(b.projectedStartsAt),
+    );
   const games = e.fixtures.filter(
     (f) => court === "All courts" || f.court === court,
   );
   // Only published facts inform the public status; hidden results never leak here.
   const status = e.placements.length
     ? "Tournament complete"
-    : done.length === 16
+    : e.fixtures.length > 0 && done.length === e.fixtures.length
       ? "Final review"
       : done.some((f) => f.stage !== "POOL") ||
           (e.resultsPublished &&
-            e.fixtures.some((f) => f.stage === "SEMIFINAL" && f.homeId))
+            e.fixtures.some((f) => f.stage !== "POOL" && f.homeId))
         ? "Playoffs"
         : done.length
           ? "Pool play"
@@ -110,7 +99,7 @@ export function PublicEvent({
             <>
               <p>{e.overview}</p>
               <div className="hero-meta">
-                <span>▦ {eventDate(e.startsAt)}</span>
+                <span>▦ {eventDate(e.startsAt, e.timezone)}</span>
                 <span>
                   <MapPin size={16} />
                   {e.venue}
@@ -132,7 +121,7 @@ export function PublicEvent({
             <div>
               <strong>
                 {done.length}
-                <small>/{e.fixtures.length || 16}</small>
+                <small>/{e.fixtures.length || "—"}</small>
               </strong>
               <span>PUBLISHED SCORES</span>
             </div>
@@ -188,14 +177,14 @@ export function PublicEvent({
                 ) : (
                   <Empty
                     title={
-                      done.length === 16
+                      e.fixtures.length > 0 && done.length === e.fixtures.length
                         ? "All games complete"
                         : e.schedulePublished
                           ? "Next teams to be confirmed"
                           : "Schedule coming soon"
                     }
                   >
-                    {done.length === 16
+                    {e.fixtures.length > 0 && done.length === e.fixtures.length
                       ? "See Scores for every result and Playoffs for the final outcome."
                       : "Staff will publish the next games here."}
                   </Empty>
@@ -206,7 +195,9 @@ export function PublicEvent({
                 <Link href={`/events/${e.slug}?view=pools`}>
                   <span>
                     <strong>Find your pool</strong>
-                    <small>Pool A or Pool B · Four teams each</small>
+                    <small>
+                      {e.pools.length} pools · Teams, matchups & standings
+                    </small>
                   </span>
                   <ArrowUpRight size={20} />
                 </Link>
@@ -220,7 +211,7 @@ export function PublicEvent({
                 <Link href={`/events/${e.slug}?view=playoffs`}>
                   <span>
                     <strong>Follow the playoffs</strong>
-                    <small>Top two in each pool advance</small>
+                    <small>{e.knockoutSize} teams in the playoff field</small>
                   </span>
                   <ArrowUpRight size={20} />
                 </Link>
@@ -236,7 +227,8 @@ export function PublicEvent({
                         <Megaphone size={16} />
                         <span>EVENT DESK</span>
                         <time>
-                          {eventDate(a.createdAt)} · {eventTime(a.createdAt)}
+                          {eventDate(a.createdAt, e.timezone)} ·{" "}
+                          {eventTime(a.createdAt, e.timezone)}
                         </time>
                       </div>
                       <p>{a.text}</p>
@@ -253,14 +245,24 @@ export function PublicEvent({
               <div>
                 <h2>Find your pool.</h2>
                 <p>
-                  Each team plays the other three teams in its pool. Top two
-                  advance to the semifinals.
+                  Every team plays each opponent once. Top{" "}
+                  {e.automaticQualifiers} per pool
+                  {e.wildcardCount
+                    ? ` + ${e.wildcardCount} best remaining`
+                    : ""}{" "}
+                  advance.
                 </p>
               </div>
             </div>
-            <div className="two-columns public-pools">
+            {!e.drawComplete && (
+              <Empty title="Official draw coming soon">
+                Staff will publish pool assignments after the official draw.
+              </Empty>
+            )}
+            <div className="stack public-pools">
               {e.pools.map((p) => {
-                const entries = e.entries.filter((t) => t.poolId === p.id);
+                const entries = e.entries.filter((t) => t.poolId === p.id),
+                  table = e.standings.find((t) => t.name === p.name);
                 return (
                   <section
                     className="panel public-pool"
@@ -269,43 +271,111 @@ export function PublicEvent({
                   >
                     <div className="section-title">
                       <h3>Pool {p.name}</h3>
-                      <Badge>{entries.length}/4 teams</Badge>
+                      <Badge>{entries.length} teams</Badge>
                     </div>
-                    {entries.length ? (
-                      <ul>
-                        {entries.map((t) => (
-                          <li key={t.id}>
-                            <span
-                              className={`pool-dot seed-${t.seed}`}
-                              aria-hidden="true"
-                            />
-                            {t.name}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>Teams to be announced.</p>
+                    <ul className="pool-team-list">
+                      {entries.map((t) => (
+                        <li key={t.id}>
+                          <span
+                            className={`pool-dot seed-${t.seed}`}
+                            aria-hidden="true"
+                          />
+                          {t.name}
+                        </li>
+                      ))}
+                    </ul>
+                    {entries.length > 0 && (
+                      <>
+                        <p className="table-note">
+                          Read a row for that team’s scores. — = same team · vs
+                          = no published result · W/O = walkover. Swipe tables
+                          sideways on a small screen.
+                        </p>
+                        <div
+                          className="table-scroll matrix-scroll"
+                          role="region"
+                          tabIndex={0}
+                          aria-label={`Pool ${p.name} matchups`}
+                        >
+                          <table className="matchup-matrix">
+                            <thead>
+                              <tr>
+                                <th scope="col">Team / opponent</th>
+                                {entries.map((t) => (
+                                  <th scope="col" key={t.id}>
+                                    {t.name}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entries.map((t) => (
+                                <tr key={t.id}>
+                                  <th scope="row">{t.name}</th>
+                                  {entries.map((op) => {
+                                    const f = e.fixtures.find(
+                                        (f) =>
+                                          f.poolId === p.id &&
+                                          ((f.homeId === t.id &&
+                                            f.awayId === op.id) ||
+                                            (f.awayId === t.id &&
+                                              f.homeId === op.id)),
+                                      ),
+                                      r = f?.result;
+                                    return (
+                                      <td
+                                        key={op.id}
+                                        className={
+                                          op.id === t.id ? "matrix-self" : ""
+                                        }
+                                      >
+                                        {op.id === t.id ? (
+                                          "—"
+                                        ) : r ? (
+                                          <span>
+                                            {f!.homeId === t.id
+                                              ? r.homeScore
+                                              : r.awayScore}
+                                            –
+                                            {f!.homeId === t.id
+                                              ? r.awayScore
+                                              : r.homeScore}
+                                            {r.kind === "WALKOVER" && (
+                                              <small>W/O</small>
+                                            )}
+                                          </span>
+                                        ) : (
+                                          <span aria-label="No published result">
+                                            vs
+                                          </span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    {table && (
+                      <StandingsTable
+                        rows={table.rows}
+                        automatic={e.automaticQualifiers}
+                        qualifiedIds={e.qualifiedIds}
+                      />
                     )}
                   </section>
                 );
               })}
             </div>
             {e.standings.length > 0 && (
-              <details className="pool-standings">
-                <summary>Pool standings & qualification</summary>
-                <p>
-                  Wins → point difference → points scored → lower seed priority.
-                  Top two advance after all pool games.
-                </p>
-                <div className="two-columns">
-                  {e.standings.map((p) => (
-                    <section className="panel" key={p.name}>
-                      <h3>Pool {p.name} standings</h3>
-                      <StandingsTable rows={p.rows} />
-                    </section>
-                  ))}
-                </div>
-              </details>
+              <p className="table-note">
+                {e.standingsVersion === "LEGACY_V1"
+                  ? "This earlier lab event uses its original wins, difference, points and seed rule."
+                  : "Rank: wins → head-to-head wins → average points → event seed. AVG PTS caps each game at 21 and excludes walkover winning games. PF, PA and PD show recorded scores; PD does not break ties. Wildcards compare win ratio, average, then seed."}
+              </p>
             )}
           </>
         )}
@@ -314,7 +384,9 @@ export function PublicEvent({
             <div className="section-title">
               <div>
                 <h2>Find your next game.</h2>
-                <p>{eventDate(e.startsAt)} · All times Malaysia time (MYT).</p>
+                <p>
+                  {eventDate(e.startsAt, e.timezone)} · All times {e.timezone}.
+                </p>
               </div>
               <label className="compact-label">
                 Court
@@ -324,8 +396,9 @@ export function PublicEvent({
                   onChange={(ev) => setCourt(ev.target.value)}
                 >
                   <option>All courts</option>
-                  <option>Court 1</option>
-                  <option>Court 2</option>
+                  {Array.from({ length: e.courtCount }, (_, i) => (
+                    <option key={i}>Court {i + 1}</option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -356,30 +429,31 @@ export function PublicEvent({
             </div>
             {done.length ? (
               <div className="stack score-groups">
-                {["Pool A", "Pool B", "Semifinals", "Medal games"].map(
-                  (group, index) => {
-                    const fixtures = done.filter((f) =>
-                      index < 2
-                        ? f.stage === "POOL" &&
-                          f.code.startsWith(index === 0 ? "A-" : "B-")
-                        : index === 2
-                          ? f.stage === "SEMIFINAL"
-                          : f.stage === "FINAL" || f.stage === "THIRD",
-                    );
-                    return (
-                      fixtures.length > 0 && (
-                        <section key={group}>
-                          <h3>{group}</h3>
-                          <div className="games-grid">
-                            {fixtures.map((f) => (
-                              <PublicGame key={f.id} e={e} f={f} />
-                            ))}
-                          </div>
-                        </section>
-                      )
-                    );
-                  },
-                )}
+                {[
+                  ...e.pools.map((p) => ({
+                    key: p.id,
+                    label: `Pool ${p.name}`,
+                    fixtures: done.filter((f) => f.poolId === p.id),
+                  })),
+                  ...Object.entries(stageNames)
+                    .filter(([stage]) => stage !== "POOL")
+                    .map(([stage, label]) => ({
+                      key: stage,
+                      label,
+                      fixtures: done.filter((f) => f.stage === stage),
+                    })),
+                ]
+                  .filter((g) => g.fixtures.length)
+                  .map((g) => (
+                    <section key={g.key}>
+                      <h3>{g.label}</h3>
+                      <div className="games-grid">
+                        {g.fixtures.map((f) => (
+                          <PublicGame key={f.id} e={e} f={f} />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
               </div>
             ) : (
               <Empty title="No scores published yet">
@@ -395,7 +469,9 @@ export function PublicEvent({
               <div>
                 <h2>The road to Champion.</h2>
                 <p>
-                  A1 and B1 are the pool winners; A2 and B2 are the runners-up.
+                  {e.knockoutSize} qualifiers · Higher qualification positions
+                  receive available byes. Winners follow the next game shown on
+                  each card.
                 </p>
               </div>
             </div>
@@ -405,43 +481,33 @@ export function PublicEvent({
                 confirm pool results.
               </Empty>
             )}
-            <div className="public-bracket">
-              {[0, 1].map((round) => (
-                <section key={round}>
-                  <h3>
-                    {round === 0 ? "01 / Semifinals" : "02 / Medal games"}
-                  </h3>
-                  {round === 1 && (
-                    <p className="progression-note">
-                      Winners → Final · Losing teams → Third-place game
-                    </p>
-                  )}
-                  {playoffSlots.slice(round * 2, round * 2 + 2).map((slot) => {
-                    const fixture = e.fixtures.find(
-                      (f) => f.code === slot.code,
-                    );
-                    return fixture ? (
-                      <PublicGame
-                        key={slot.code}
-                        e={e}
-                        f={fixture}
-                        progression
-                      />
-                    ) : (
-                      <article
-                        className="game-card public-game playoff-placeholder"
-                        key={slot.code}
-                      >
-                        <h4>{slot.label}</h4>
-                        <p>
-                          {slot.home} <span>vs</span> {slot.away}
-                        </p>
-                        <small>Awaiting published schedule</small>
-                      </article>
-                    );
-                  })}
-                </section>
-              ))}
+            <div className="public-bracket dynamic-bracket">
+              {[
+                ...new Set(
+                  e.fixtures
+                    .filter((f) => f.stage !== "POOL")
+                    .map((f) => f.round),
+                ),
+              ]
+                .sort((a, b) => b - a)
+                .map((round) => (
+                  <section key={round}>
+                    <h3>
+                      {round === 1
+                        ? "Medal games"
+                        : stageNames[
+                            e.fixtures.find(
+                              (f) => f.stage !== "POOL" && f.round === round,
+                            )!.stage
+                          ]}
+                    </h3>
+                    {e.fixtures
+                      .filter((f) => f.stage !== "POOL" && f.round === round)
+                      .map((f) => (
+                        <PublicGame key={f.id} e={e} f={f} progression />
+                      ))}
+                  </section>
+                ))}
             </div>
             <section className="final-outcome">
               <h2>Final tournament outcome</h2>
@@ -463,7 +529,7 @@ export function PublicEvent({
                                 ? "THIRD PLACE"
                                 : p.place === 4
                                   ? "FOURTH PLACE"
-                                  : "POOL PLACEMENT"}
+                                  : "FINAL PLACEMENT"}
                         </span>
                       </div>
                       {p.place === 1 && <Trophy size={28} />}
@@ -497,9 +563,20 @@ function PublicGame({
   f: PublicFixture;
   progression?: boolean;
 }) {
-  const slot = playoffSlots.find((s) => s.code === f.code);
+  const next = e.fixtures.find(
+    (g) =>
+      g.homeSource === `Winner ${f.code}` ||
+      g.awaySource === `Winner ${f.code}`,
+  );
+  const sourceLabel = (source: string) =>
+    source.replace("Qualifier ", "Playoff slot ") +
+    (e.fixtures.some((g) => g.stage === "PLAY_IN") &&
+    f.stage !== "PLAY_IN" &&
+    /^(Qualifier|Playoff slot) /.test(source)
+      ? " (bye)"
+      : "");
   const name = (id: string | null, source: string) =>
-    e.entries.find((t) => t.id === id)?.name ?? source;
+    e.entries.find((t) => t.id === id)?.name ?? sourceLabel(source);
   const winner = f.result
     ? f.result.homeScore > f.result.awayScore
       ? name(f.homeId, f.homeSource)
@@ -514,24 +591,27 @@ function PublicGame({
         <span>{stageLabel(f)}</span>
         <Badge tone={f.result ? "lime" : "neutral"}>
           {f.result
-            ? "FINAL SCORE"
+            ? f.result.kind === "WALKOVER"
+              ? "WALKOVER"
+              : "FINAL SCORE"
             : !f.homeId || !f.awayId
               ? "AWAITING TEAMS"
               : e.resultsPublished
-                ? "SCHEDULED"
+                ? f.status.replaceAll("_", " ")
                 : "SCORES NOT PUBLISHED"}
         </Badge>
       </div>
-      {progression && slot && (
+      {progression && (
         <p className="playoff-source">
-          {slot.home} vs {slot.away}
+          {sourceLabel(f.homeSource)} vs {sourceLabel(f.awaySource)}
         </p>
       )}
       <div className="game-place">
-        <span>
-          <Clock3 size={13} />
-          {eventTime(f.startsAt)}
-        </span>
+        <FixtureTime
+          fixture={f}
+          timezone={e.timezone}
+          eventStart={e.startsAt}
+        />
         <span>
           <MapPin size={13} />
           {f.court}
@@ -541,12 +621,12 @@ function PublicGame({
         {[
           {
             id: f.homeId,
-            source: slot?.home ?? f.homeSource,
+            source: f.homeSource,
             score: f.result?.homeScore,
           },
           {
             id: f.awayId,
-            source: slot?.away ?? f.awaySource,
+            source: f.awaySource,
             score: f.result?.awayScore,
           },
         ].map(({ id, source, score }, i) => (
@@ -568,13 +648,16 @@ function PublicGame({
           </div>
         ))}
       </div>
+      {progression && !winner && next && (
+        <p className="progression-note">Winner → {next.code}</p>
+      )}
       {progression && winner && (
         <p className="winner-caption">
-          {f.stage === "SEMIFINAL"
-            ? "To the Final"
-            : f.stage === "FINAL"
-              ? "Final winner"
-              : "Third place"}
+          {f.stage === "FINAL"
+            ? "Champion"
+            : f.stage === "THIRD"
+              ? "Third place"
+              : `Advances to ${next?.code ?? "next round"}`}
           : <strong>{winner}</strong>
         </p>
       )}

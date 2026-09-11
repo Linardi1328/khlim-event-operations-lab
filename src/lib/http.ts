@@ -19,10 +19,10 @@ export function checkOrigin(request: Request) {
     throw new DomainError("Use JSON requests.", 415);
 }
 export async function readJson(request: Request) {
-  if (Number(request.headers.get("content-length")) > 120_000)
+  if (Number(request.headers.get("content-length")) > 2_000_000)
     throw new DomainError("Request too large.", 413);
   const body = await request.text();
-  if (Buffer.byteLength(body) > 120_000)
+  if (Buffer.byteLength(body) > 2_000_000)
     throw new DomainError("Request too large.", 413);
   try {
     return JSON.parse(body) as unknown;

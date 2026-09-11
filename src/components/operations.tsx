@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { EventData } from "@/lib/query";
+import type { Qualified } from "@/lib/competition/bracket";
 import type { Standing } from "@/lib/domain";
 import type { Serialized } from "@/lib/display";
 import { eventDate, eventTime, stamp } from "@/lib/display";
@@ -34,11 +35,13 @@ import {
 import { Teams } from "./teams";
 import { ImportTeams } from "./import-teams";
 import { Games } from "./games";
+import { formatIssues, formatPreview } from "@/lib/competition/format";
 import { StandingsTable } from "./standings";
 export type EventDTO = Serialized<EventData>;
 export type DeskProps = {
   event: EventDTO;
   tables: { name: string; rows: Standing[] }[];
+  qualified: Qualified[];
   phase: string;
   view: string;
   username: string;
@@ -63,6 +66,7 @@ const sections = [
 export function OperationsDesk({
   event: e,
   tables,
+  qualified,
   phase,
   view,
   username,
@@ -78,7 +82,7 @@ export function OperationsDesk({
         <div className="sidebar-event">
           <span className="eyebrow">CURRENT EVENT</span>
           <strong>{e.name}</strong>
-          <span>{eventDate(e.startsAt)}</span>
+          <span>{eventDate(e.startsAt, e.timezone)}</span>
         </div>
         <nav aria-label="Event operations">
           {sections.map(([id, label, Icon]) => (
@@ -122,7 +126,7 @@ export function OperationsDesk({
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                {eventDate(e.startsAt)} · 3×3 BASKETBALL
+                {eventDate(e.startsAt, e.timezone)} · 3×3 BASKETBALL
               </div>
               <h1>
                 {view === "overview"
@@ -160,8 +164,8 @@ export function OperationsDesk({
               {phase}
             </span>
             <span>
-              {completed} / 16 games complete{" "}
-              <span className="status-divider">|</span> All times MYT
+              {completed} / {e.fixtures.length} games complete{" "}
+              <span className="status-divider">|</span> {e.timezone}
             </span>
           </div>
           {view === "overview" && <Overview e={e} completed={completed} />}
@@ -171,21 +175,77 @@ export function OperationsDesk({
           {view === "standings" && (
             <section className="stack">
               <div className="notice">
-                Top two in each pool advance after all 12 pool results are
-                confirmed. Order: wins → point difference → points scored →
-                lower seed. Seed priority is published before play.
+                Top {e.automaticQualifiers} in each pool + {e.wildcardCount}{" "}
+                best remaining qualify after all pool results.{" "}
+                {e.standingsVersion === "LEGACY_V1"
+                  ? "Legacy event: wins → difference → points → original seed."
+                  : "Order: wins → head-to-head wins → average points (cap 21, walkover wins excluded) → event seed. Across pools: win ratio → average → seed."}
               </div>
               <div className="two-columns">
                 {tables.map((p) => (
                   <section className="panel" key={p.name}>
                     <div className="section-title">
                       <h2>Pool {p.name}</h2>
-                      <Badge tone="lime">TOP 2 ADVANCE</Badge>
+                      <Badge tone="lime">
+                        TOP {e.automaticQualifiers} ADVANCE
+                      </Badge>
                     </div>
-                    <StandingsTable rows={p.rows} />
+                    <StandingsTable
+                      rows={p.rows}
+                      automatic={e.automaticQualifiers}
+                    />
                   </section>
                 ))}
               </div>
+            </section>
+          )}
+          {view === "standings" && (
+            <section className="panel">
+              <h2>Playoff qualifiers</h2>
+              {qualified.length ? (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Qualification order</th>
+                        <th>Team</th>
+                        <th>Pool finish</th>
+                        <th>Route</th>
+                        <th>Win ratio</th>
+                        <th>Average</th>
+                        <th>Event seed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {qualified.map((q) => (
+                        <tr key={q.id}>
+                          <td>{q.qualificationRank}</td>
+                          <th scope="row">{q.name}</th>
+                          <td>
+                            {e.pools.find((p) => p.id === q.poolId)?.name}
+                            {q.poolRank}
+                          </td>
+                          <td>{q.wildcard ? "Best remaining" : "Automatic"}</td>
+                          <td>
+                            {q.won}/{q.played}
+                          </td>
+                          <td>{q.average.toFixed(2)}</td>
+                          <td>{q.seed}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p>
+                  Confirm all pool results to determine automatic and
+                  best-remaining qualifiers.
+                </p>
+              )}
+              <p className="table-note">
+                Byes favor this order. Opening opponents can be rearranged
+                within the lower half to avoid a same-pool rematch.
+              </p>
             </section>
           )}
           {view === "knockout" && (
@@ -207,22 +267,29 @@ export function OperationsDesk({
 }
 function Overview({ e, completed }: { e: EventDTO; completed: number }) {
   const r = useRequest();
+  const count = e.entries.length,
+    draw = e.draws.some((d) => d.status === "ACTIVE"),
+    preview = formatPreview(e, count),
+    total = e.fixtures.length || preview.poolGames + preview.knockoutGames;
+  const poolGames = e.fixtures.filter((f) => f.stage === "POOL"),
+    poolDone = poolGames.length > 0 && poolGames.every(resultOf);
   const confirmed = e.entries.filter((t) => t.confirmedAt).length,
     checked = e.entries.filter((t) => t.checkedInAt).length,
     players = e.entries.flatMap((t) => t.roster),
     present = players.filter((p) => p.checkedInAt).length;
   const ready =
-    e.entries.length === 8 &&
-    confirmed === 8 &&
-    checked === 8 &&
+    draw &&
+    !formatIssues(e, count).length &&
+    confirmed === count &&
+    checked === count &&
     e.entries.every((t) =>
       t.roster.filter((p) => p.slot <= 3).every((p) => p.checkedInAt),
     );
   const steps = [
     {
-      label: "Register & validate entries",
-      done: confirmed === 8,
-      detail: `${confirmed} of 8 entries confirmed`,
+      label: "Register, confirm & run official draw",
+      done: count > 0 && confirmed === count && draw,
+      detail: `${confirmed} of ${count} entries confirmed · ${draw ? "draw saved" : "draw required"}`,
       view: "teams",
     },
     {
@@ -236,21 +303,19 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
       done: e.schedulePublished,
       detail: e.fixtures.length
         ? "Fixtures created"
-        : "12 pool games + 4 knockout games",
+        : `${preview.poolGames} pool games + ${preview.knockoutGames} playoff games`,
       view: "schedule",
     },
     {
       label: "Complete pool play",
-      done:
-        e.fixtures.filter((f) => f.stage === "POOL" && resultOf(f)).length ===
-        12,
-      detail: "Standings determine semifinal qualifiers",
+      done: poolDone,
+      detail: "Standings determine the playoff field",
       view: "standings",
     },
     {
       label: "Play knockouts & confirm placements",
       done: !!e.placementsConfirmedAt,
-      detail: `${completed} of 16 results confirmed`,
+      detail: `${completed} of ${total} results confirmed`,
       view: "knockout",
     },
     {
@@ -266,23 +331,28 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
         {[
           [
             "Teams registered",
-            `${e.entries.length}/8`,
+            `${count}`,
             `${confirmed} entries confirmed`,
             Users,
           ],
           [
             "Players checked in",
             `${present}/${players.length}`,
-            `${checked} of 8 teams present`,
+            `${checked} of ${count} teams present`,
             Check,
           ],
           [
             "Games complete",
-            `${completed}/16`,
-            `${Math.max(16 - completed, 0)} games remaining`,
+            `${completed}/${total}`,
+            `${Math.max(total - completed, 0)} games remaining`,
             Activity,
           ],
-          ["Event courts", "02", "Court 1 · Court 2", MapPin],
+          [
+            "Event courts",
+            String(e.courtCount),
+            `${e.slotMinutes}-minute slots · ${e.restMinutes}-minute rest`,
+            MapPin,
+          ],
         ].map(([label, value, detail, Icon]) => {
           const I = Icon as typeof Users;
           return (
@@ -336,22 +406,22 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
             <h2>
               {!e.fixtures.length
                 ? "Get everyone court-ready."
-                : completed < 12
+                : !poolDone
                   ? "Keep the scores moving."
-                  : completed < 16
+                  : completed < total
                     ? "The bracket is taking shape."
                     : "Review the final order."}
             </h2>
             <p>
               {!e.fixtures.length
-                ? "Confirm eight valid rosters, then check in every team and their three core players."
-                : completed < 12
+                ? "Confirm eligible rosters, run the official draw, then check in every team and their three core players."
+                : !poolDone
                   ? "Confirm each game once the score is agreed. Standings update with every result."
-                  : "Review knockout results and sign off all eight final placements."}
+                  : "Review knockout results and sign off the final placements."}
             </p>
             <Link
               className="button"
-              href={`/ops/${e.id}?view=${!e.fixtures.length ? "teams" : completed < 12 ? "schedule" : "knockout"}`}
+              href={`/ops/${e.id}?view=${!e.fixtures.length ? "teams" : !poolDone ? "schedule" : "knockout"}`}
             >
               {!e.fixtures.length
                 ? "Open team check-in"
@@ -362,11 +432,14 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
           <section className="panel">
             <h2>Needs attention</h2>
             <ul className="attention-list">
-              {e.entries.length < 8 && (
-                <li>{8 - e.entries.length} team entries still needed.</li>
+              {e.entries.length < e.expectedTeams && (
+                <li>
+                  {e.expectedTeams - e.entries.length} fewer entries than
+                  planned. Draw uses actual registrations.
+                </li>
               )}
-              {confirmed < 8 && (
-                <li>{8 - confirmed} entries awaiting confirmation.</li>
+              {confirmed < count && (
+                <li>{count - confirmed} entries awaiting confirmation.</li>
               )}
               {!ready && !e.fixtures.length && (
                 <li>Core player check-in must finish before scheduling.</li>
@@ -375,7 +448,7 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
               {e.fixtures.length > 0 && !e.schedulePublished && (
                 <li>Fixtures are ready but the schedule is unpublished.</li>
               )}
-              {completed === 16 && !e.placementsConfirmedAt && (
+              {completed === total && !e.placementsConfirmedAt && (
                 <li>Final placements need staff sign-off.</li>
               )}
               {ready && e.schedulePublished && (
@@ -392,7 +465,7 @@ function Overview({ e, completed }: { e: EventDTO; completed: number }) {
                   r.run(
                     `/api/events/${e.id}/command`,
                     { action: "generateFixtures" },
-                    "All 16 fixtures created. Publish the schedule next.",
+                    "Fixtures created. Publish the schedule next.",
                   )
                 }
               >
@@ -413,12 +486,12 @@ function Placements({ e }: { e: EventDTO }) {
       <div className="section-title">
         <div>
           <h2>Final placements</h2>
-          <p>Review all 16 results before signing off the final order.</p>
+          <p>Review every result before signing off the final order.</p>
         </div>
         <Button
           busy={r.busy}
           disabled={
-            e.fixtures.length !== 16 ||
+            !e.fixtures.length ||
             e.fixtures.some((f) => !resultOf(f)) ||
             !!e.placementsConfirmedAt
           }
@@ -426,7 +499,7 @@ function Placements({ e }: { e: EventDTO }) {
             r.run(
               `/api/events/${e.id}/command`,
               { action: "confirmPlacements" },
-              "All eight placements confirmed. Publish results in Public event.",
+              "Placements confirmed. Publish results in Public event.",
             )
           }
         >
@@ -454,9 +527,10 @@ function Placements({ e }: { e: EventDTO }) {
         </ol>
       ) : (
         <p className="muted">
-          Placements 1–4 follow the medal games. Places 5–8 compare pool finish,
-          wins, difference, points scored, then seed. Any score correction
-          withdraws the sign-off until reviewed again.
+          Medal games determine the podium. Remaining places compare elimination
+          round, pool finish, then inter-pool ranking (win ratio, average
+          points, seed). Any score correction withdraws the sign-off until
+          reviewed again.
         </p>
       )}
     </section>
@@ -596,7 +670,7 @@ function HistoryView({ e }: { e: EventDTO }) {
                 {f.results.map((r) => (
                   <div className="history-record" key={r.id}>
                     <Badge tone={r.status === "CONFIRMED" ? "lime" : "amber"}>
-                      {r.status}
+                      {r.status} · {r.kind}
                     </Badge>
                     <strong>
                       {teamName(e, r.homeId)} {r.homeScore} — {r.awayScore}{" "}
@@ -622,6 +696,37 @@ function HistoryView({ e }: { e: EventDTO }) {
             Confirmed scores and correction history will appear here.
           </Empty>
         )}
+      </section>
+      <section className="panel">
+        <h2>Actual timing observations</h2>
+        <p>
+          Earlier observations remain in history after a timing correction or
+          authorized replay.
+        </p>
+        {e.fixtures
+          .filter((f) => f.timings.length)
+          .map((f) => (
+            <details className="history-game" key={f.id}>
+              <summary>
+                {f.code} · {f.timings.length} observations
+              </summary>
+              {f.timings.map((t) => (
+                <article key={t.id} className="history-record">
+                  <strong>
+                    {stamp(t.startedAt, e.timezone)} →{" "}
+                    {t.endedAt
+                      ? stamp(t.endedAt, e.timezone)
+                      : "End not observed"}
+                  </strong>
+                  <p>{t.reason}</p>
+                  <small>
+                    {t.staff.username} · recorded{" "}
+                    {stamp(t.createdAt, e.timezone)}
+                  </small>
+                </article>
+              ))}
+            </details>
+          ))}
       </section>
       <section className="panel">
         <h2>Recent operator activity</h2>

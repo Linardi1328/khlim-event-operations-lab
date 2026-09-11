@@ -43,18 +43,26 @@ describe("benchmark tournament domain", () => {
     });
     expect(rows.find((t) => t.id === "b")).toMatchObject({ lost: 1, diff: -2 });
   });
-  it("breaks ties by difference, then points scored, then visible seed", () => {
-    const differenceFirst = standings(teams, [
-      { homeId: "a", awayId: "b", result: { homeScore: 12, awayScore: 1 } },
-      { homeId: "c", awayId: "d", result: { homeScore: 21, awayScore: 20 } },
-    ]);
+  it("preserves legacy-event ordering by difference, points scored and original seed", () => {
+    const differenceFirst = standings(
+      teams,
+      [
+        { homeId: "a", awayId: "b", result: { homeScore: 12, awayScore: 1 } },
+        { homeId: "c", awayId: "d", result: { homeScore: 21, awayScore: 20 } },
+      ],
+      "LEGACY_V1",
+    );
     expect(differenceFirst[0].id).toBe("a");
-    const result = standings(teams, [
-      { homeId: "a", awayId: "b", result: { homeScore: 10, awayScore: 5 } },
-      { homeId: "c", awayId: "d", result: { homeScore: 15, awayScore: 10 } },
-    ]);
+    const result = standings(
+      teams,
+      [
+        { homeId: "a", awayId: "b", result: { homeScore: 10, awayScore: 5 } },
+        { homeId: "c", awayId: "d", result: { homeScore: 15, awayScore: 10 } },
+      ],
+      "LEGACY_V1",
+    );
     expect(result.map((t) => t.id)).toEqual(["c", "a", "d", "b"]);
-    const tied = standings(teams, []);
+    const tied = standings(teams, [], "LEGACY_V1");
     expect(tied.map((t) => t.seed)).toEqual([1, 2, 3, 4]);
     expect(tied.every((t) => t.seedTiebreak)).toBe(true);
   });
@@ -154,7 +162,10 @@ describe("CSV validation", () => {
     ["missing player", valid.replace("Synthetic One", "")],
     ["too many", valid + "\nBlack,Four,A,1,4\nBlack,Five,A,1,5"],
     ["duplicate player", valid.replace("Synthetic Two", "Synthetic One")],
-    ["conflicting rows", valid.replace("Synthetic Two,A", "Synthetic Two,B")],
+    [
+      "conflicting roster slots",
+      valid.replace("Synthetic Two,A,1,2", "Synthetic Two,A,1,1"),
+    ],
     ["malformed row", valid + "\nshort,row"],
     ["malformed quotes", valid + '\n"broken'],
     ["missing headers", "hello\nworld"],

@@ -11,7 +11,15 @@ import {
   publicProjection,
 } from "../../src/lib/query";
 import { signIn, sessionStaff, signOut } from "../../src/lib/auth";
-import { makeEvent, ready, pools, score, sample, register } from "../helpers";
+import {
+  makeEvent,
+  ready,
+  legacyReady,
+  pools,
+  score,
+  sample,
+  register,
+} from "../helpers";
 let staffId: string;
 const ids: string[] = [];
 async function event() {
@@ -32,7 +40,7 @@ afterAll(async () => {
 describe("PostgreSQL operational truth", () => {
   it("operates all 16 games, reconciles the Black/Lime correction and handles dangerous corrections with audited replay", async () => {
     const e = await event();
-    await ready(staffId, e.id);
+    await legacyReady(staffId, e.id);
     let state = (await getEvent(e.id))!;
     expect(state.fixtures).toHaveLength(16);
     expect(state.fixtures.filter((f) => f.stage === "POOL")).toHaveLength(12);
@@ -205,8 +213,6 @@ describe("PostgreSQL operational truth", () => {
     await command(staffId, other.id, {
       action: "saveEntry",
       name: "KHLIM Black",
-      pool: "A",
-      seed: 1,
       synthetic: true,
       players: [1, 2, 3].map((slot) => ({
         slot,
@@ -227,18 +233,23 @@ describe("PostgreSQL operational truth", () => {
     const e = await event();
     await expect(
       command(staffId, e.id, { action: "generateFixtures" }),
-    ).rejects.toThrow("eight");
+    ).rejects.toThrow("draw");
     await expect(
       command(staffId, e.id, {
         action: "saveEntry",
         name: "Small",
-        pool: "A",
-        seed: 1,
         synthetic: true,
         players: [{ slot: 1, name: "One" }],
       }),
     ).rejects.toThrow("3 core");
     await register(staffId, e.id);
+    for (const t of (await getEvent(e.id))!.entries)
+      await command(staffId, e.id, { action: "confirmEntry", entryId: t.id });
+    await command(staffId, e.id, {
+      action: "runDraw",
+      confirmed: true,
+      expectedDrawVersion: null,
+    });
     await expect(
       command(staffId, e.id, { action: "generateFixtures" }),
     ).rejects.toThrow("check in");
@@ -275,8 +286,6 @@ describe("PostgreSQL operational truth", () => {
       command(staffId, e.id, {
         action: "saveEntry",
         name: "Locked",
-        pool: "A",
-        seed: 1,
         synthetic: true,
         players: [1, 2, 3].map((slot) => ({ slot, name: `Player ${slot}` })),
       }),

@@ -4,11 +4,22 @@ import { Upload, FileSpreadsheet } from "lucide-react";
 import type { ImportRowData, Mapping } from "@/lib/csv";
 import type { EventDTO } from "./operations";
 import { Badge, Button, Feedback, useRequest, useHydrated } from "./ui";
+const columnLabel = (field: string) =>
+  field === "team"
+    ? "Team column"
+    : field === "player"
+      ? "Player column"
+      : field === "points"
+        ? "Ranking points (optional)"
+        : field === "slot"
+          ? "Roster slot (optional)"
+          : `${field.replace(/(\d)/, " $1")} column`;
 type Preview = {
   batchId?: string;
   errors: string[];
   rows: ImportRowData[];
   headers: string[];
+  ignored?: string[];
 };
 export function ImportTeams({ event: e }: { event: EventDTO }) {
   const r = useRequest();
@@ -18,32 +29,44 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
     [headers, setHeaders] = useState<string[]>([]),
     [preview, setPreview] = useState<Preview | null>(null),
     [confirmed, setConfirmed] = useState(false),
-    [mapping, setMapping] = useState<Mapping>({
-      team: "team",
-      player: "player",
-      pool: "pool",
-      seed: "seed",
-      slot: "slot",
-    });
+    [mapping, setMapping] = useState<Mapping>({}),
+    [mappingIssues, setMappingIssues] = useState<string[]>([]);
+  const [inspecting, setInspecting] = useState(false);
   const locked = e.fixtures.length > 0;
   async function load(file: File) {
     r.clear();
+    setInspecting(true);
+    setCsv("");
+    setHeaders([]);
+    setMapping({});
     setPreview(null);
     setConfirmed(false);
     setFilename(file.name);
-    if (file.size > 100_000) {
+    if (file.size > 1_000_000) {
       setCsv("");
-      setPreview({ errors: ["CSV exceeds 100 KB."], rows: [], headers: [] });
+      setPreview({ errors: ["CSV exceeds 1 MB."], rows: [], headers: [] });
+      setInspecting(false);
       return;
     }
-    const text = await file.text();
-    setCsv(text);
-    const h = text
-      .replace(/^\uFEFF/, "")
-      .split(/\r?\n/)[0]
-      .split(",")
-      .map((s) => s.trim().replace(/^"|"$/g, ""));
-    setHeaders(h);
+    try {
+      const text = await file.text();
+      setCsv(text);
+      const inspected = await r.run<{
+        headers: string[];
+        suggestions: Mapping;
+        ambiguities: string[];
+        errors: string[];
+      }>(`/api/events/${e.id}/command`, { action: "inspectImport", csv: text });
+      if (inspected) {
+        setHeaders(inspected.headers);
+        setMapping(inspected.suggestions);
+        setMappingIssues([...inspected.ambiguities, ...inspected.errors]);
+      }
+    } catch {
+      r.setError("Could not read this file. Choose a UTF-8 CSV and try again.");
+    } finally {
+      setInspecting(false);
+    }
   }
   return (
     <div className="stack">
@@ -76,11 +99,13 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
             <label className="upload-zone">
               <Upload size={28} />
               <strong>Choose your roster CSV</strong>
-              <span>UTF-8 · up to 100 KB · 32 player rows</span>
+              <span>
+                UTF-8 · up to 1 MB · long or wide format · 512 player rows
+              </span>
               <input
                 aria-label="Upload roster CSV"
                 type="file"
-                disabled={!hydrated}
+                disabled={!hydrated || inspecting || r.busy}
                 accept=".csv,text/csv"
                 onChange={(ev) => {
                   if (ev.target.files?.[0]) void load(ev.target.files[0]);
@@ -96,34 +121,62 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
             {csv && (
               <>
                 <h3>Match your columns</h3>
+                <p className="muted">
+                  Suggestions use header aliases only. Review every mapping.
+                  Unknown or ambiguous fields need your decision; unused columns
+                  are ignored.
+                </p>
+                {mappingIssues.length > 0 && (
+                  <div className="notice" role="status">
+                    {mappingIssues.join(" · ")}
+                  </div>
+                )}
+                <label>
+                  CSV layout
+                  <select
+                    disabled={inspecting || r.busy}
+                    value={mapping.layout ?? ""}
+                    onChange={(ev) => {
+                      setMapping({ ...mapping, layout: ev.target.value });
+                      setPreview(null);
+                      setConfirmed(false);
+                    }}
+                  >
+                    <option value="">Choose layout</option>
+                    <option value="long">Long — one player per row</option>
+                    <option value="wide">Wide — one team per row</option>
+                  </select>
+                </label>
                 <div className="mapping-grid">
-                  {(Object.keys(mapping) as (keyof Mapping)[]).map((field) => (
+                  {(mapping.layout === "wide"
+                    ? [
+                        "team",
+                        "player1",
+                        "points1",
+                        "player2",
+                        "points2",
+                        "player3",
+                        "points3",
+                        "player4",
+                        "points4",
+                      ]
+                    : ["team", "player", "points", "slot"]
+                  ).map((field) => (
                     <label key={field}>
-                      {field === "slot"
-                        ? "Roster slot"
-                        : field === "seed"
-                          ? "Seed priority"
-                          : field[0].toUpperCase() + field.slice(1)}
+                      {columnLabel(field)}
                       <select
-                        aria-label={
-                          field === "slot"
-                            ? "Roster slot"
-                            : field === "seed"
-                              ? "Seed priority"
-                              : field[0].toUpperCase() + field.slice(1)
-                        }
-                        value={mapping[field]}
+                        disabled={inspecting || r.busy}
+                        aria-label={columnLabel(field)}
+                        value={mapping[field] ?? ""}
                         onChange={(ev) => {
                           setMapping({ ...mapping, [field]: ev.target.value });
                           setPreview(null);
                           setConfirmed(false);
                         }}
                       >
-                        {!headers.includes(mapping[field]) && (
-                          <option value={mapping[field]}>Choose column</option>
-                        )}
-                        {headers.map((h, i) => (
-                          <option key={i} value={h}>
+                        <option value="">Unmapped / default</option>
+                        {headers.map((h) => (
+                          <option key={h} value={h}>
                             {h}
                           </option>
                         ))}
@@ -132,11 +185,12 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
                   ))}
                 </div>
                 <p className="muted">
-                  Pool: A or B · Seed: unique team priority 1–8 · Slot: core
-                  1–3, optional substitute 4.
+                  Missing points default to 0. In long format, missing slot
+                  columns use team row order: core 1–3, optional substitute 4.
+                  Pools and seeds come from the official draw.
                 </p>
                 <Button
-                  busy={r.busy}
+                  busy={r.busy || inspecting}
                   onClick={async () => {
                     setConfirmed(false);
                     const p = await r.run<Preview>(
@@ -182,6 +236,11 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
               confirmation and check-in happen after import.
             </p>
           )}
+          {preview.ignored?.length ? (
+            <p className="muted">
+              Ignored columns: {preview.ignored.join(", ")}
+            </p>
+          ) : null}
           <div className="table-scroll">
             <table>
               <thead>
@@ -189,19 +248,19 @@ export function ImportTeams({ event: e }: { event: EventDTO }) {
                   <th>Row</th>
                   <th>Team</th>
                   <th>Player</th>
-                  <th>Pool</th>
-                  <th>Seed</th>
+                  <th>Source column</th>
+                  <th>Ranking points</th>
                   <th>Slot</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.rows.map((row) => (
-                  <tr key={row.line}>
+                  <tr key={`${row.line}-${row.slot}`}>
                     <td>{row.line}</td>
                     <td>{row.team}</td>
                     <td>{row.player}</td>
-                    <td>{row.pool}</td>
-                    <td>{row.seed}</td>
+                    <td>{row.playerColumn}</td>
+                    <td>{row.fibaPoints}</td>
                     <td>{row.slot}</td>
                   </tr>
                 ))}

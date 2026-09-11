@@ -9,8 +9,12 @@ export class DomainError extends Error {
 }
 export const key = (value: string) =>
   value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
-export type Team = { id: string; name: string; seed: number };
-export type Score = { homeScore: number; awayScore: number };
+export type Team = { id: string; name: string; seed: number | null };
+export type Score = {
+  homeScore: number;
+  awayScore: number;
+  kind?: "PLAYED" | "WALKOVER";
+};
 export type Game = {
   homeId: string | null;
   awayId: string | null;
@@ -23,6 +27,10 @@ export type Standing = Team & {
   for: number;
   against: number;
   diff: number;
+  average: number;
+  averageTotal: number;
+  averageGames: number;
+  winRatio: number;
   rank: number;
   seedTiebreak: boolean;
 };
@@ -45,8 +53,12 @@ export function validateScore(
       "A game must have a winner. Resolve overtime before confirming.",
     );
 }
-export function standings(teams: Team[], games: Game[]): Standing[] {
-  const rows = teams.map((t) => ({
+export function standings(
+  teams: Team[],
+  games: Game[],
+  policy = "FIBA_INSPIRED_V2",
+): Standing[] {
+  const rows: Standing[] = teams.map((t) => ({
     id: t.id,
     name: t.name,
     seed: t.seed,
@@ -56,6 +68,10 @@ export function standings(teams: Team[], games: Game[]): Standing[] {
     for: 0,
     against: 0,
     diff: 0,
+    average: 0,
+    averageTotal: 0,
+    averageGames: 0,
+    winRatio: 0,
     rank: 0,
     seedTiebreak: false,
   }));
@@ -66,55 +82,135 @@ export function standings(teams: Team[], games: Game[]): Standing[] {
     if (!h || !a)
       throw new DomainError("Result references a team outside this pool.");
     validateScore(g.homeId, g.awayId, g.result.homeScore, g.result.awayScore);
+    const homeWins = g.result.homeScore > g.result.awayScore;
+    if (
+      g.result.kind === "WALKOVER" &&
+      !(
+        (g.result.homeScore === 21 && g.result.awayScore === 0) ||
+        (g.result.homeScore === 0 && g.result.awayScore === 21)
+      )
+    )
+      throw new DomainError("Walkover must be recorded as 21–0 or 0–21.");
     h.played++;
     a.played++;
     h.for += g.result.homeScore;
     h.against += g.result.awayScore;
     a.for += g.result.awayScore;
     a.against += g.result.homeScore;
-    if (g.result.homeScore > g.result.awayScore) {
+    if (homeWins) {
       h.won++;
       a.lost++;
     } else {
       a.won++;
       h.lost++;
     }
+    for (const [t, points, won] of [
+      [h, g.result.homeScore, homeWins],
+      [a, g.result.awayScore, !homeWins],
+    ] as const) {
+      if (g.result.kind === "WALKOVER" && won) continue;
+      t.averageTotal += Math.min(points, 21);
+      t.averageGames++;
+    }
   }
-  for (const r of rows) r.diff = r.for - r.against;
-  rows.sort(
-    (a, b) =>
-      b.won - a.won || b.diff - a.diff || b.for - a.for || a.seed - b.seed,
-  );
+  for (const r of rows) {
+    r.diff = r.for - r.against;
+    r.average = r.averageGames ? r.averageTotal / r.averageGames : 0;
+    r.winRatio = r.played ? r.won / r.played : 0;
+  }
+  if (policy === "LEGACY_V1") {
+    rows.sort(
+      (a, b) =>
+        b.won - a.won || b.diff - a.diff || b.for - a.for || compareSeed(a, b),
+    );
+  } else {
+    // Resolve equal-win groups using a win-only mini-table. Reapply head-to-head to a smaller tied subgroup.
+    const resolve = (group: Standing[]): Standing[] => {
+      if (group.length < 2) return group;
+      const ids = new Set(group.map((r) => r.id));
+      const mini = new Map(group.map((r) => [r.id, 0]));
+      for (const g of games)
+        if (g.result && ids.has(g.homeId!) && ids.has(g.awayId!)) {
+          const winner =
+            g.result.homeScore > g.result.awayScore ? g.homeId! : g.awayId!;
+          mini.set(winner, mini.get(winner)! + 1);
+        }
+      const wins = [...new Set(mini.values())].sort((a, b) => b - a);
+      if (wins.length > 1)
+        return wins.flatMap((w) =>
+          resolve(group.filter((r) => mini.get(r.id) === w)),
+        );
+      for (const r of group)
+        r.seedTiebreak = group.some(
+          (x) => x.id !== r.id && compareAverage(x, r) === 0,
+        );
+      return group.sort((a, b) => compareAverage(a, b) || compareSeed(a, b));
+    };
+    const sorted = [...new Set(rows.map((r) => r.won))]
+      .sort((a, b) => b - a)
+      .flatMap((w) => resolve(rows.filter((r) => r.won === w)));
+    rows.splice(0, rows.length, ...sorted);
+  }
   rows.forEach((r, i) => {
     r.rank = i + 1;
-    r.seedTiebreak = rows.some(
-      (x) =>
-        x.id !== r.id &&
-        x.won === r.won &&
-        x.diff === r.diff &&
-        x.for === r.for,
-    );
+    if (policy === "LEGACY_V1")
+      r.seedTiebreak = rows.some(
+        (x) =>
+          x.id !== r.id &&
+          x.won === r.won &&
+          x.diff === r.diff &&
+          x.for === r.for,
+      );
   });
   return rows;
 }
-export function qualifiers(rows: Standing[]) {
-  if (rows.length !== 4 || rows.some((t) => t.played !== 3))
+export function compareSeed(a: Team, b: Team) {
+  if (a.seed == null || b.seed == null) return 0;
+  if (a.id !== b.id && a.seed === b.seed)
     throw new DomainError(
-      "Confirm all six games in each pool before qualification.",
+      "Duplicate event seeds make this tie ambiguous. Review the draw.",
     );
-  return rows.slice(0, 2).map((t) => t.id);
+  return a.seed - b.seed;
+}
+export function compareAverage(a: Standing, b: Standing) {
+  return (
+    b.averageTotal * (a.averageGames || 1) -
+    a.averageTotal * (b.averageGames || 1)
+  );
+}
+export function interPoolCompare(a: Standing, b: Standing) {
+  return (
+    b.won * (a.played || 1) - a.won * (b.played || 1) ||
+    compareAverage(a, b) ||
+    compareSeed(a, b)
+  );
+}
+export function qualifiers(rows: Standing[], count = 2) {
+  if (
+    rows.length < 2 ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    count > rows.length ||
+    rows.some((t) => t.played !== rows.length - 1)
+  )
+    throw new DomainError("Confirm every pool game before qualification.");
+  return rows.slice(0, count).map((t) => t.id);
 }
 export function roundRobin(ids: string[]) {
-  if (ids.length !== 4 || new Set(ids).size !== 4)
-    throw new DomainError("Each pool requires four distinct teams.");
-  return [
-    [0, 3],
-    [1, 2],
-    [0, 2],
-    [3, 1],
-    [0, 1],
-    [2, 3],
-  ].map(([h, a]) => ({ homeId: ids[h], awayId: ids[a] }));
+  if (ids.length < 2 || new Set(ids).size !== ids.length)
+    throw new DomainError("A pool requires at least two distinct teams.");
+  const rotation: (string | null)[] = [...ids];
+  if (rotation.length % 2) rotation.push(null);
+  const games: { homeId: string; awayId: string; round: number }[] = [];
+  for (let round = 0; round < rotation.length - 1; round++) {
+    for (let i = 0; i < rotation.length / 2; i++) {
+      const h = rotation[i],
+        a = rotation[rotation.length - 1 - i];
+      if (h && a) games.push({ homeId: h, awayId: a, round });
+    }
+    rotation.splice(1, 0, rotation.pop()!);
+  }
+  return games;
 }
 export function outcome(g: Game) {
   if (!g.result || !g.homeId || !g.awayId) return null;

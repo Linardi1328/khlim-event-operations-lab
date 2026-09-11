@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { staffFromCookie } from "@/lib/http";
-import { getEvent, poolTables, eventPhase } from "@/lib/query";
+import { getEvent, poolTables, eventPhase, qualification } from "@/lib/query";
 import { serialize } from "@/lib/display";
 import { OperationsDesk } from "@/components/operations";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,7 @@ export default async function EventOps({
     <OperationsDesk
       event={serialize(event)}
       tables={poolTables(event)}
+      qualified={qualification(event)}
       phase={eventPhase(event)}
       view={(await searchParams).view ?? "overview"}
       username={staff.username}

@@ -6,12 +6,16 @@ import { getEvent, current } from "../../src/lib/query";
 import {
   makeEvent,
   ready,
+  legacyReady,
+  flexibleReady,
+  finish,
+  flexibleCsv,
   pools,
   poolScores,
   register,
   score,
 } from "../helpers";
-import { command } from "../../src/lib/service";
+import { command, createEvent } from "../../src/lib/service";
 let staffId: string;
 const ids: string[] = [];
 test.beforeAll(async () => {
@@ -68,7 +72,7 @@ async function correct(
     .click();
   return card;
 }
-test("complete staff workflow: create, CSV review, check-in, scores, correction, knockout and public mobile", async ({
+test("complete staff workflow: flexible creation, import review, official draw, check-in, results and placements", async ({
   page,
   browser,
 }) => {
@@ -79,26 +83,40 @@ test("complete staff workflow: create, CSV review, check-in, scores, correction,
   await page
     .getByRole("button", { name: "+ Create event", exact: true })
     .click();
-  await page.getByLabel("Event name").fill("KHLIM Synthetic Cup");
+  await page
+    .getByLabel("Event name", { exact: true })
+    .fill("KHLIM Flexible Browser Cup");
+  await page.getByLabel("Expected teams", { exact: true }).fill("12");
+  await page.getByLabel("Number of pools", { exact: true }).fill("3");
+  await page
+    .getByLabel("Best remaining / wildcard slots", { exact: true })
+    .fill("2");
+  await page.getByLabel("Knockout field", { exact: true }).fill("8");
+  await page.getByLabel("Planned start", { exact: true }).fill("10:00");
+  await page.getByLabel("Number of courts", { exact: true }).fill("3");
+  await expect(page.locator(".format-preview")).toContainText("18 pool games");
   await page
     .getByLabel("This event will contain synthetic participants only.")
     .check();
+  await page.screenshot({
+    path: "docs/qa/flex-creation-desktop.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Create synthetic event" }).click();
   await page.waitForURL(/\/ops\/[^?]+\?view=teams/);
   const eventId = page.url().split("/ops/")[1].split("?")[0];
   ids.push(eventId);
-  await expect(page.getByText("A fresh team sheet")).toBeVisible();
   await page.getByRole("link", { name: "CSV import", exact: true }).click();
   await expect(page.getByLabel("Upload roster CSV")).toBeEnabled();
-  await page
-    .getByLabel("Upload roster CSV")
-    .setInputFiles("public/samples/benchmark-teams.csv");
+  await page.getByLabel("Upload roster CSV").setInputFiles({
+    name: "wide-rosters.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(flexibleCsv(12, "wide")),
+  });
+  await expect(page.getByLabel("CSV layout")).toHaveValue("wide");
   await page.getByRole("button", { name: "Validate & preview" }).click();
   await expect(
-    page.getByRole("heading", { name: "Import preview" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Confirm & import 8 teams" }),
+    page.getByRole("button", { name: "Confirm & import 12 teams" }),
   ).toBeDisabled();
   expect(await db.teamEntry.count({ where: { eventId } })).toBe(0);
   await page
@@ -106,16 +124,12 @@ test("complete staff workflow: create, CSV review, check-in, scores, correction,
       "I reviewed this preview and confirm these are synthetic teams and players.",
     )
     .check();
-  await page.getByRole("button", { name: "Confirm & import 8 teams" }).click();
+  await page.getByRole("button", { name: "Confirm & import 12 teams" }).click();
   await expect(
     page.getByText("Import committed.", { exact: false }),
   ).toBeVisible();
   await page.getByRole("link", { name: /Teams & check-in/ }).click();
-  const entries = await db.teamEntry.findMany({
-    where: { eventId },
-    include: { roster: true },
-    orderBy: { seed: "asc" },
-  });
+  const entries = (await getEvent(eventId))!.entries;
   for (const team of entries) {
     const card = page.locator(".team-card").filter({
       has: page.getByRole("heading", { name: team.name, exact: true }),
@@ -132,47 +146,39 @@ test("complete staff workflow: create, CSV review, check-in, scores, correction,
     await expect(
       card.getByRole("button", { name: "Team present", exact: true }),
     ).toBeVisible();
-    for (const player of team.roster.filter((p) => p.slot <= 3)) {
+    for (const p of team.roster) {
       await card
-        .getByRole("button", { name: `Check in ${player.name}`, exact: true })
+        .getByRole("button", { name: `Check in ${p.name}`, exact: true })
         .click();
       await expect(
         card.getByRole("button", {
-          name: `Undo check-in ${player.name}`,
+          name: `Undo check-in ${p.name}`,
           exact: true,
         }),
       ).toBeVisible();
     }
   }
+  const draw = page.getByTestId("official-draw");
+  await draw.getByRole("checkbox").check();
+  await draw
+    .getByRole("button", { name: "Run official draw", exact: true })
+    .click();
+  await expect(draw.getByText("DRAW 1", { exact: true })).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Team present", exact: true }),
-  ).toHaveCount(8);
+  ).toHaveCount(12);
   await page.getByRole("link", { name: "Overview", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Game day, under control." }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: "docs/qa/v1-operator-desktop.png",
-    fullPage: true,
-  });
   await noOverflow(page);
-  await page.waitForLoadState("networkidle");
-  expect(
-    (
-      await new AxeBuilder({ page })
-        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-        .analyze()
-    ).violations,
-  ).toEqual([]);
-  await page.getByRole("button", { name: "Generate fixtures" }).click();
-  await expect(
-    page.getByText("All 16 fixtures created.", { exact: false }),
-  ).toBeVisible();
   await page
-    .getByRole("link", { name: "Public event", exact: true })
-    .first()
+    .getByRole("button", { name: "Generate fixtures", exact: true })
     .click();
+  await expect(
+    page.getByText("Fixtures created. Publish the schedule next.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.goto(`/ops/${eventId}?view=publish`);
   for (const name of [
     "Publish Event overview",
     "Publish Schedule & bracket",
@@ -186,106 +192,55 @@ test("complete staff workflow: create, CSV review, check-in, scores, correction,
       }),
     ).toBeVisible();
   }
-  await page
-    .getByLabel("Announcement", { exact: true })
-    .fill("Synthetic court update: finals on Court 1.");
-  await page
-    .getByRole("button", { name: "Publish announcement", exact: true })
-    .click();
-  await expect(
-    page.getByText("Synthetic court update: finals on Court 1."),
-  ).toBeVisible();
-  await page
-    .getByRole("link", { name: "Schedule & scores", exact: true })
-    .click();
-  for (const pool of ["A", "B"])
-    for (let n = 1; n <= 6; n++) {
-      const code = `${pool}-${n}`;
-      await record(page, code, ...(poolScores[code] ?? [21, 10]));
-    }
-  await page.getByRole("link", { name: "Pool standings", exact: true }).click();
-  await expect(
-    page.locator(".standings-table").first().locator("tbody tr").nth(1),
-  ).toContainText("KHLIM Black");
-  await page
-    .getByRole("link", { name: "Schedule & scores", exact: true })
-    .click();
-  const corrected = await correct(
+  await page.goto(`/ops/${eventId}?view=schedule`);
+  for (const f of (await getEvent(eventId))!.fixtures.filter(
+    (f) => f.stage === "POOL",
+  ))
+    await record(page, f.code, 21, 10);
+  const card = await correct(
     page,
-    "A-5",
-    16,
-    18,
-    "Verified sheet: Black 16, Lime 18.",
+    "A-1",
+    22,
+    10,
+    "An extra basket was confirmed on the signed sheet.",
   );
   await expect(
-    corrected.getByRole("button", { name: "Correct result" }),
+    card.getByRole("button", { name: "Correct result" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Pool standings", exact: true }).click();
+  await page.goto(`/ops/${eventId}?view=standings`);
   await expect(
-    page.locator(".standings-table").first().locator("tbody tr").nth(1),
-  ).toContainText("KHLIM Lime");
-  await page
-    .getByRole("link", { name: "Knockout & placements", exact: true })
-    .click();
-  await expect(page.getByTestId("game-SF-2")).toContainText("KHLIM Lime");
-  await record(page, "SF-1", 21, 10);
-  await record(page, "SF-2", 21, 15);
-  await record(page, "THIRD", 0, 1);
-  await record(page, "FINAL", 21, 10);
+    page.getByRole("heading", { name: "Playoff qualifiers", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Best remaining", exact: true }),
+  ).toHaveCount(2);
+  await page.goto(`/ops/${eventId}?view=knockout`);
+  for (const f of (await getEvent(eventId))!.fixtures
+    .filter((f) => f.stage !== "POOL")
+    .sort((a, b) => b.round - a.round || a.code.localeCompare(b.code)))
+    await record(page, f.code, 21, 12);
   await page
     .getByRole("button", { name: "Confirm final placements", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Placements confirmed", exact: true }),
   ).toBeVisible();
-  await page.reload();
-  await expect(page.locator(".placement-list li")).toHaveCount(8);
-  const event = (await getEvent(eventId))!;
-  const mobile = await browser.newContext({
+  const e = (await getEvent(eventId))!;
+  expect(e.placements).toHaveLength(12);
+  expect(e.fixtures).toHaveLength(26);
+  const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
   });
-  const publicPage = await mobile.newPage();
-  publicPage.on("pageerror", (e) => browserErrors.push(e.message));
-  await publicPage.goto(`/events/${event.slug}`);
-  await expect(
-    publicPage.getByRole("heading", { name: "KHLIM Amber", exact: true }),
-  ).toBeVisible();
-  await publicPage.screenshot({
-    path: "docs/qa/v1-public-mobile-overview.png",
-    fullPage: true,
-  });
-  for (const [name, selector] of [
-    ["Schedule", ".public-game"],
-    ["Pools", ".public-pools"],
-    ["Scores", ".score-groups"],
-    ["Playoffs", ".public-bracket"],
-  ] as const) {
-    await publicPage
-      .getByRole("navigation", { name: "Public event" })
-      .getByRole("link", { name, exact: true })
-      .click();
-    await expect(publicPage.locator(selector).first()).toBeVisible();
-    await noOverflow(publicPage);
-    await publicPage.waitForLoadState("networkidle");
-    expect(
-      (
-        await new AxeBuilder({ page: publicPage })
-          .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-          .analyze()
-      ).violations,
-    ).toEqual([]);
-    await publicPage.screenshot({
-      path: `docs/qa/v1-mobile-${name.toLowerCase().replace(" ", "-")}.png`,
-      fullPage: true,
-    });
-  }
-  await expect(publicPage.locator(".public-placements li")).toHaveCount(8);
-  expect(await publicPage.locator("body").innerText()).not.toContain(
-    "Synthetic Black 1",
+  const visitor = await context.newPage();
+  await visitor.goto(`/events/${e.slug}`);
+  await expect(visitor.locator(".champion")).toContainText(
+    e.placements[0].entry.name,
   );
-  await mobile.close();
+  await noOverflow(visitor);
+  expect(await visitor.locator("body").innerText()).not.toContain("Lab 1 One");
+  await context.close();
   expect(browserErrors).toEqual([]);
 });
 test("dangerous browser correction blocks until staff explicitly authorizes replay", async ({
@@ -293,7 +248,7 @@ test("dangerous browser correction blocks until staff explicitly authorizes repl
 }) => {
   const e = await makeEvent(staffId, "Browser correction");
   ids.push(e.id);
-  await ready(staffId, e.id);
+  await legacyReady(staffId, e.id);
   await pools(staffId, e.id);
   await login(page);
   await page.goto(`/ops/${e.id}?view=knockout`);
@@ -328,7 +283,7 @@ test("dangerous browser correction blocks until staff explicitly authorizes repl
   expect(state.placements).toHaveLength(8);
   await card.getByRole("checkbox", { name: /I authorize voiding/ }).check();
   await page.screenshot({
-    path: "docs/qa/v1-correction-conflict.png",
+    path: "docs/qa/flex-correction-conflict.png",
     fullPage: true,
   });
   await card
@@ -361,6 +316,12 @@ test("public access, authorization, CSRF, hidden data, failed import and respons
   for (const action of [
     "saveEntry",
     "assignPools",
+    "runDraw",
+    "inspectImport",
+    "recordWalkover",
+    "observeTiming",
+    "proposeRecovery",
+    "approveRecovery",
     "previewImport",
     "commitImport",
     "confirmEntry",
@@ -402,7 +363,7 @@ test("public access, authorization, CSRF, hidden data, failed import and respons
   await page.setViewportSize({ width: 820, height: 1180 });
   await noOverflow(page);
   await page.screenshot({
-    path: "docs/qa/v1-operator-tablet.png",
+    path: "docs/qa/flex-operator-tablet.png",
     fullPage: true,
   });
   await page.getByRole("button", { name: `Edit ${long}` }).click();
@@ -546,22 +507,34 @@ test("staff maps source columns before import and long team names fit public mob
   const { sample } = await import("../helpers");
   const csv = sample
     .replace(
-      "team,player,pool,seed,slot",
-      "Club,Athlete,Group,Priority,Position",
+      "team,player,slot,fiba_points",
+      "Squad label,Athlete name,Roster position,Points value",
     )
     .replaceAll("KHLIM Black", long);
+  let releaseInspection!: () => void;
+  const inspectionGate = new Promise<void>((resolve) => {
+    releaseInspection = resolve;
+  });
+  await page.route("**/api/events/*/command", async (route) => {
+    if (route.request().postDataJSON()?.action === "inspectImport")
+      await inspectionGate;
+    await route.continue();
+  });
   await expect(page.getByLabel("Upload roster CSV")).toBeEnabled();
   await page.getByLabel("Upload roster CSV").setInputFiles({
     name: "mapped.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(csv),
   });
+  await expect(page.getByLabel("CSV layout")).toBeDisabled();
+  releaseInspection();
+  await expect(page.getByLabel("CSV layout")).toBeEnabled();
+  await page.getByLabel("CSV layout").selectOption("long");
   for (const [label, column] of [
-    ["Team", "Club"],
-    ["Player", "Athlete"],
-    ["Pool", "Group"],
-    ["Seed priority", "Priority"],
-    ["Roster slot", "Position"],
+    ["Team column", "Squad label"],
+    ["Player column", "Athlete name"],
+    ["Roster slot (optional)", "Roster position"],
+    ["Ranking points (optional)", "Points value"],
   ])
     await page.getByLabel(label, { exact: true }).selectOption(column);
   await page.getByRole("button", { name: "Validate & preview" }).click();
@@ -593,6 +566,11 @@ test("staff maps source columns before import and long team names fit public mob
         checked: true,
       });
   }
+  await command(staffId, e.id, {
+    action: "runDraw",
+    confirmed: true,
+    expectedDrawVersion: null,
+  });
   await command(staffId, e.id, { action: "generateFixtures" });
   await pools(staffId, e.id);
   for (const field of ["public", "schedulePublished", "resultsPublished"])
@@ -604,15 +582,12 @@ test("staff maps source columns before import and long team names fit public mob
   });
   const mobile = await context.newPage();
   await mobile.goto(`/events/${e.slug}?view=pools`);
-  await mobile
-    .getByText("Pool standings & qualification", { exact: true })
-    .click();
   await expect(
-    mobile.getByRole("rowheader", { name: long, exact: false }),
+    mobile.getByRole("rowheader", { name: long, exact: false }).first(),
   ).toBeVisible();
   await noOverflow(mobile);
   await mobile.screenshot({
-    path: "docs/qa/v1-mobile-long-names.png",
+    path: "docs/qa/flex-mobile-long-names.png",
     fullPage: true,
   });
   await mobile.goto(`/events/${e.slug}?view=schedule`);
@@ -620,7 +595,7 @@ test("staff maps source columns before import and long team names fit public mob
     mobile.locator(".public-game").filter({ hasText: long }).first(),
   ).toBeVisible();
   await noOverflow(mobile);
-  for (const view of ["pools", "scores", "playoffs"]) {
+  for (const view of ["pools", "scores"]) {
     await mobile.goto(`/events/${e.slug}?view=${view}`);
     await expect(
       mobile.locator("main").getByText(long, { exact: true }).first(),
@@ -630,9 +605,10 @@ test("staff maps source columns before import and long team names fit public mob
   await context.close();
 });
 
-test("staff edits players and swaps full pools before scheduling; stale pool forms cannot overwrite changes", async ({
+test("staff edits ranking points and roster, runs a witnessed draw and preserves redraw history", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
   const e = await makeEvent(staffId, "V1 staff setup");
   ids.push(e.id);
   await register(staffId, e.id);
@@ -641,6 +617,8 @@ test("staff edits players and swaps full pools before scheduling; stale pool for
   await page
     .getByRole("button", { name: "Edit KHLIM Black", exact: true })
     .click();
+  await expect(page.getByLabel("Team name", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("Team name", { exact: true })).toBeInViewport();
   await page.getByLabel("Substitute (optional)", { exact: true }).fill("");
   await page
     .getByLabel("Core player 1", { exact: true })
@@ -660,70 +638,59 @@ test("staff edits players and swaps full pools before scheduling; stale pool for
     .fill("Synthetic Added Black Substitute");
   await page.getByLabel("These participants are synthetic.").check();
   await page.screenshot({
-    path: "docs/qa/v1-staff-roster-edit.png",
+    path: "docs/qa/flex-staff-roster-edit.png",
     fullPage: true,
   });
   await page.getByRole("button", { name: "Save team entry" }).click();
   await expect(black.locator(".roster-list > div")).toHaveCount(4);
-  await page.getByRole("button", { name: "Manage pools", exact: true }).click();
   await page
-    .getByLabel("Pool for KHLIM Black", { exact: true })
-    .selectOption("B");
-  await expect(
-    page.getByRole("button", { name: "Save pool assignments" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByText("Both pools need exactly four teams.", { exact: false }),
-  ).toBeVisible();
+    .getByRole("button", { name: "Edit KHLIM Black", exact: true })
+    .click();
   await page
-    .getByLabel("Pool for KHLIM Blue", { exact: true })
-    .selectOption("A");
-  await page.screenshot({
-    path: "docs/qa/v1-staff-pool-swap.png",
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Save pool assignments" }).click();
-  await expect(
-    page.getByText("Pool assignments saved.", { exact: false }),
-  ).toBeVisible();
+    .getByLabel("Player 1 FIBA ranking points", { exact: true })
+    .fill("9876");
+  await page.getByLabel("These participants are synthetic.").check();
+  await page.getByRole("button", { name: "Save team entry" }).click();
+  await expect(black).toContainText("9876 ranking pts");
+  for (const t of (await getEvent(e.id))!.entries)
+    await command(staffId, e.id, { action: "confirmEntry", entryId: t.id });
   await page.reload();
-  await expect(black).toContainText("Pool B");
+  const draw = page.getByTestId("official-draw");
+  await expect(page.locator('select[name="pool"]')).toHaveCount(0);
+  await draw.getByRole("checkbox").check();
+  await draw
+    .getByRole("button", { name: "Run official draw", exact: true })
+    .click();
+  await expect(draw.getByText("DRAW 1", { exact: true })).toBeVisible();
+  await expect(black).toContainText("Seed 1");
+  await draw
+    .getByLabel("Reason for redraw")
+    .fill("Staff witnessed a repeat draw for this synthetic test.");
+  await draw.getByRole("checkbox").check();
+  await draw.getByRole("button", { name: "Run official redraw" }).click();
+  await expect(draw.getByText("DRAW 2", { exact: true })).toBeVisible();
+  await draw.getByText("Draw audit & reproducibility (2 versions)").click();
   await expect(
-    page.getByRole("region", { name: "Staff Pool A", exact: true }),
-  ).toContainText("KHLIM Blue");
-  const state = (await getEvent(e.id))!;
-  await page.getByRole("button", { name: "Manage pools", exact: true }).click();
-  await command(staffId, e.id, {
-    action: "assignPools",
-    assignments: state.entries.map((t) => ({
-      entryId: t.id,
-      expectedPool: state.pools.find((p) => p.id === t.poolId)!.name,
-      pool: t.seed <= 4 ? "A" : "B",
-    })),
-  });
-  await page.getByRole("button", { name: "Refresh event" }).click();
-  await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: "Save pool assignments" }).click();
-  await expect(page.locator(".notice.error")).toContainText(
-    "changed since you opened",
-  );
-  await page.getByRole("button", { name: "Cancel pool changes" }).click();
+    draw.getByRole("heading", { name: "Draw 1 · SUPERSEDED", exact: true }),
+  ).toBeVisible();
   await page.setViewportSize({ width: 820, height: 1180 });
   await noOverflow(page);
   await page.screenshot({
-    path: "docs/qa/v1-staff-pools-tablet.png",
+    path: "docs/qa/flex-staff-draw-tablet.png",
     fullPage: true,
   });
-  const locked = await makeEvent(staffId, "V1 locked pools");
+  const locked = await makeEvent(staffId, "Locked draw browser");
   ids.push(locked.id);
   await ready(staffId, locked.id);
   await page.goto(`/ops/${locked.id}?view=teams`);
   await expect(
-    page.getByRole("button", { name: "Manage pools", exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByText("Pool assignments are locked", { exact: false }),
+    page.getByText("The draw is locked because fixtures exist.", {
+      exact: false,
+    }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run official redraw" }),
+  ).toHaveCount(0);
 });
 
 test("courtside V1 views show pools, published schedule, zero scores and playoff progression at 390 and 360px", async ({
@@ -749,7 +716,10 @@ test("courtside V1 views show pools, published schedule, zero scores and playoff
   await expect(page.getByTestId("public-game-A-1")).toContainText("09:00");
   await expect(page.getByTestId("public-game-A-1")).toContainText("Court 1");
   await page.getByLabel("Court", { exact: true }).selectOption("Court 2");
-  await expect(page.locator(".public-game")).toHaveCount(7);
+  await expect(page.locator(".public-game")).toHaveCount(
+    (await getEvent(e.id))!.fixtures.filter((f) => f.court === "Court 2")
+      .length,
+  );
   await score(staffId, e.id, "A-1", 0, 1);
   await page.goto(`${url}?view=scores`);
   await expect(page.locator(".public-game")).toHaveCount(1);
@@ -760,10 +730,10 @@ test("courtside V1 views show pools, published schedule, zero scores and playoff
   await page.goto(`${url}?view=playoffs`);
   await expect(
     page.getByTestId("public-game-SF-1").locator(".score-display"),
-  ).toContainText("A1");
+  ).toContainText("Playoff slot");
   await expect(
     page.getByTestId("public-game-SF-2").locator(".score-display"),
-  ).toContainText("B1");
+  ).toContainText("Playoff slot");
   // Complete all remaining pool games through the same service used by staff.
   const state = (await getEvent(e.id))!;
   for (const f of state.fixtures.filter(
@@ -834,7 +804,7 @@ test("courtside V1 views show pools, published schedule, zero scores and playoff
         ).toEqual([]);
       }
       await page.screenshot({
-        path: `docs/qa/v1-${width}-${name.toLowerCase()}.png`,
+        path: `docs/qa/flex-${width}-${name.toLowerCase()}.png`,
         fullPage: true,
       });
     }
@@ -842,7 +812,212 @@ test("courtside V1 views show pools, published schedule, zero scores and playoff
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(url);
   await page.screenshot({
-    path: "docs/qa/v1-public-desktop.png",
+    path: "docs/qa/flex-public-desktop.png",
     fullPage: true,
   });
+});
+
+test("live staff walkover and recovery approval update a large unequal-pool event and deep mobile playoffs", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180000);
+  const e = await createEvent(staffId, {
+    name: "KHLIM Uneven Courtside Review",
+    date: "2026-10-10",
+    venue: "Synthetic courts",
+    expectedTeams: 18,
+    poolCount: 4,
+    automaticQualifiers: 3,
+    knockoutSize: 12,
+    courtCount: 3,
+    plannedStart: "10:00",
+  });
+  ids.push(e.id);
+  await flexibleReady(staffId, e.id, 18);
+  for (const field of ["public", "schedulePublished", "resultsPublished"])
+    await command(staffId, e.id, { action: "publish", field, value: true });
+  let state = (await getEvent(e.id))!;
+  const f = state.fixtures[0],
+    observed = state.fixtures[1];
+  await login(page);
+  await page.goto(`/ops/${e.id}?view=schedule`);
+  const card = page.getByTestId(`game-${f.code}`);
+  await card.getByLabel("Record a walkover (21–0)", { exact: true }).check();
+  const select = card.getByLabel("Walkover winner");
+  await select.selectOption("HOME");
+  await card
+    .getByLabel("Reason for walkover")
+    .fill("Opponent did not arrive after the agreed waiting period.");
+  await card
+    .getByRole("button", { name: "Confirm result", exact: true })
+    .click();
+  await expect(
+    card.getByRole("button", { name: "Correct result" }),
+  ).toBeVisible();
+  await expect(card.getByText("WALKOVER", { exact: true })).toBeVisible();
+  await page
+    .getByText("Live timing & schedule recovery", { exact: true })
+    .click();
+  const live = page.locator(".live-operations");
+  await live.getByLabel("Game", { exact: true }).selectOption(observed.id);
+  await live
+    .getByLabel("Actual start", { exact: true })
+    .fill("2026-10-10T10:12");
+  await live
+    .getByLabel("Actual end (optional)", { exact: true })
+    .fill("2026-10-10T10:40");
+  await live
+    .getByLabel("Timing observation reason")
+    .fill("Referee recorded actual start and finish on Court 2.");
+  await live.getByRole("button", { name: "Save actual timing" }).click();
+  await expect(live.getByRole("status")).toContainText("Actual timing saved");
+  await page.waitForLoadState("networkidle");
+  await live.getByLabel("Disruption", { exact: true }).selectOption("Court 1");
+  await live.getByLabel("Additional court delay (minutes)").fill("12");
+  await live
+    .getByLabel("Recovery reason", { exact: true })
+    .fill("Court 1 delayed; project later games with turnaround and rest.");
+  await live
+    .getByRole("button", { name: "Calculate recovery proposal" })
+    .click();
+  await expect(
+    live.getByRole("heading", { name: /3. Review recovery/ }),
+  ).toBeVisible();
+  state = (await getEvent(e.id))!;
+  expect(
+    state.fixtures.every(
+      (f) => f.startsAt.getTime() === f.projectedStartsAt.getTime(),
+    ),
+  ).toBe(true);
+  await live
+    .getByLabel(
+      "I reviewed the affected starts and approve these public estimates.",
+    )
+    .check();
+  await live.getByRole("button", { name: "Approve recovery" }).click();
+  await expect(live.getByText("APPLIED", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: "docs/qa/flex-live-recovery-desktop.png",
+    fullPage: true,
+  });
+  for (const el of await page.locator("select").all()) {
+    const css = await el.evaluate((el) => ({
+      padding: parseFloat(getComputedStyle(el).paddingRight),
+      position: getComputedStyle(el).backgroundPosition,
+      appearance: getComputedStyle(el).appearance,
+    }));
+    expect(css.padding).toBeGreaterThanOrEqual(40);
+    expect(css.position).toContain("14px");
+    expect(css.appearance).toBe("none");
+  }
+  await page.goto(`/events/${e.slug}?view=schedule`);
+  await expect(page.getByText(/DELAYED \+/).first()).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 800 });
+  await noOverflow(page);
+  await page.screenshot({
+    path: "docs/qa/flex-delayed-schedule-mobile.png",
+    fullPage: true,
+  });
+  await finish(staffId, e.id);
+  await command(staffId, e.id, { action: "confirmPlacements" });
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+    for (const name of [
+      "Overview",
+      "Pools",
+      "Schedule",
+      "Scores",
+      "Playoffs",
+    ]) {
+      await page
+        .getByRole("navigation", { name: "Public event" })
+        .getByRole("link", { name, exact: true })
+        .click();
+      await noOverflow(page);
+      await expect(
+        page
+          .getByRole("navigation", { name: "Public event" })
+          .getByRole("link", { name, exact: true }),
+      ).toHaveAttribute("aria-current", "page");
+      await noOverflow(page);
+      if (name === "Pools") {
+        await expect(page.locator(".public-pool li")).toHaveCount(18);
+        await expect(page.locator(".matchup-matrix")).toHaveCount(4);
+        const counts = await page
+          .locator(".matchup-matrix tbody")
+          .evaluateAll((t) => t.map((el) => el.children.length).sort());
+        expect(counts).toEqual([4, 4, 5, 5]);
+        expect(
+          await page
+            .locator(".matrix-scroll")
+            .first()
+            .evaluate((el) => el.scrollWidth > el.clientWidth),
+        ).toBe(true);
+      }
+      if (name === "Playoffs") {
+        await expect(page.locator(".public-game")).toHaveCount(12);
+        await expect(
+          page.getByRole("heading", { name: "Play-in", exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: "Quarterfinals", exact: true }),
+        ).toBeVisible();
+      }
+      if (name === "Pools" || name === "Playoffs")
+        await page.screenshot({
+          path: `docs/qa/flex-unequal-${width}-${name.toLowerCase()}.png`,
+          fullPage: true,
+        });
+    }
+  }
+  const pub = await (await request.get(`/api/public/${e.slug}`)).json();
+  expect(JSON.stringify(pub)).not.toMatch(
+    /roster|fibaPoints|seedScore|staffId|rngSeed|provenance|password/,
+  );
+});
+
+test("ambiguous CSV mapping stays at human review and shared selects fit at desktop, tablet and mobile", async ({
+  page,
+}) => {
+  const e = await makeEvent(staffId, "Ambiguous mapping browser");
+  ids.push(e.id);
+  await login(page);
+  await page.goto(`/ops/${e.id}?view=import`);
+  await expect(page.getByLabel("Upload roster CSV")).toBeEnabled();
+  await page.getByLabel("Upload roster CSV").setInputFiles({
+    name: "ambiguous.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "team,squad,athlete\nBlack,Ignored,One\nBlack,Ignored,Two\nBlack,Ignored,Three",
+    ),
+  });
+  await expect(
+    page.getByText("team: choose between team, squad", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Team column")).toHaveValue("");
+  await page.getByRole("button", { name: "Validate & preview" }).click();
+  await expect(page.locator(".notice.error")).toContainText(
+    "Map every required field",
+  );
+  expect(await db.teamEntry.count({ where: { eventId: e.id } })).toBe(0);
+  await page.getByLabel("Team column").selectOption("team");
+  await page.getByRole("button", { name: "Validate & preview" }).click();
+  await expect(
+    page.getByRole("button", { name: "Confirm & import 1 teams" }),
+  ).toBeDisabled();
+  for (const width of [1440, 820, 390, 360]) {
+    await page.setViewportSize({ width, height: 900 });
+    await noOverflow(page);
+    const css = await page.getByLabel("CSV layout").evaluate((el) => ({
+      padding: parseFloat(getComputedStyle(el).paddingRight),
+      background: getComputedStyle(el).backgroundPosition,
+    }));
+    expect(css.padding).toBeGreaterThanOrEqual(40);
+    expect(css.background).toContain("14px");
+    await page.screenshot({
+      path: `docs/qa/flex-select-${width}.png`,
+      fullPage: true,
+    });
+  }
 });

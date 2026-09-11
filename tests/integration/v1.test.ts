@@ -21,99 +21,118 @@ afterAll(async () => {
   await db.event.deleteMany({ where: { id: { in: ids } } });
   await db.$disconnect();
 });
-async function assignments(eventId: string) {
-  const e = (await getEvent(eventId))!;
-  return e.entries.map((t) => ({
-    entryId: t.id,
-    pool: e.pools.find((p) => p.id === t.poolId)!.name,
-    expectedPool: e.pools.find((p) => p.id === t.poolId)!.name,
-  }));
-}
-describe("V1 setup and public projection", () => {
-  it("atomically swaps full pools, retains attendance, rejects invalid/foreign/duplicate and stale assignments", async () => {
+describe("V2 draw setup and public projection (supersedes manual V1 pools)", () => {
+  it("atomically records draw inputs/assignments and protects explicit redraw versions", async () => {
     const e = await event();
     await register(staffId, e.id);
-    const original = await assignments(e.id);
-    const swap = original.map((a, i) => ({
-      ...a,
-      pool: i === 0 ? "B" : i === 4 ? "A" : a.pool,
-    }));
-    await command(staffId, e.id, {
-      action: "confirmEntry",
-      entryId: original[0].entryId,
-    });
-    await command(staffId, e.id, {
-      action: "checkIn",
-      entryId: original[0].entryId,
-      checked: true,
-    });
-    const before = (await getEvent(e.id))!;
-    for (const invalid of [
-      original.map((a, i) => (i === 0 ? { ...a, pool: "B" } : a)),
-      original.map((a, i) => (i === 0 ? original[1] : a)),
-      original.map((a, i) =>
-        i === 0 ? { ...a, entryId: "foreign-entry" } : a,
+    await expect(
+      command(staffId, e.id, {
+        action: "runDraw",
+        confirmed: true,
+        expectedDrawVersion: null,
+      }),
+    ).rejects.toThrow("Confirm");
+    for (const t of (await getEvent(e.id))!.entries)
+      await command(staffId, e.id, { action: "confirmEntry", entryId: t.id });
+    await expect(
+      command(staffId, e.id, { action: "assignPools", assignments: [] }),
+    ).rejects.toThrow("Manual");
+    const attempts = await Promise.allSettled(
+      [1, 2].map(() =>
+        command(staffId, e.id, {
+          action: "runDraw",
+          confirmed: true,
+          expectedDrawVersion: null,
+        }),
       ),
-    ]) {
-      await expect(
-        command(staffId, e.id, { action: "assignPools", assignments: invalid }),
-      ).rejects.toThrow();
-      expect(await assignments(e.id)).toEqual(original);
-    }
-    await command(staffId, e.id, { action: "assignPools", assignments: swap });
-    const after = (await getEvent(e.id))!;
-    expect(after.entries[0].roster).toEqual(before.entries[0].roster);
-    expect(after.entries[0].checkedInAt).toEqual(before.entries[0].checkedInAt);
-    expect(after.entries[0].confirmedAt).toEqual(before.entries[0].confirmedAt);
+    );
+    expect(attempts.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const first = (await getEvent(e.id))!.draws[0];
+    expect(first.entries).toHaveLength(8);
+    expect(first.entries.every((t) => t.players.length === 4)).toBe(true);
+    await expect(
+      command(staffId, e.id, {
+        action: "runDraw",
+        confirmed: true,
+        expectedDrawVersion: 1,
+      }),
+    ).rejects.toThrow("reason");
+    await command(staffId, e.id, {
+      action: "runDraw",
+      confirmed: true,
+      expectedDrawVersion: 1,
+      reason: "Publicly witnessed synthetic redraw.",
+    });
+    const state = (await getEvent(e.id))!;
+    expect(state.draws.map((d) => d.status)).toEqual(["ACTIVE", "SUPERSEDED"]);
+    expect(state.draws[1].entries).toEqual(first.entries);
+    const t = state.entries[0];
+    const players = t.roster.map((p) => ({
+      name: p.name,
+      slot: p.slot,
+      fibaPoints: p.fibaPoints,
+    }));
+    await expect(
+      command(staffId, e.id, {
+        action: "saveEntry",
+        entryId: t.id,
+        name: t.name,
+        players,
+        synthetic: true,
+        pool: "A",
+        seed: 1,
+      }),
+    ).rejects.toThrow();
+    await command(staffId, e.id, {
+      action: "saveEntry",
+      entryId: t.id,
+      name: t.name,
+      players,
+      synthetic: true,
+    });
+    const invalidated = (await getEvent(e.id))!;
+    expect(invalidated.draws[0].status).toBe("INVALIDATED");
     expect(
-      after.actions.find((a) => a.kind === "POOLS_ASSIGNED"),
-    ).toMatchObject({
-      staffId,
-      detail: expect.stringContaining("KHLIM Black: Pool A → Pool B"),
-    });
-    await expect(
-      command(staffId, e.id, { action: "assignPools", assignments: original }),
-    ).rejects.toMatchObject({ status: 409 });
-    const persisted = await assignments(e.id);
-    // Fail late in the loop, after an earlier update, to prove whole-transaction rollback.
-    const lateStale = persisted.map((a, i) => ({
-      ...a,
-      pool: i === 0 ? "A" : i === 4 ? "B" : a.pool,
-      expectedPool: i === 7 ? "A" : a.expectedPool,
-    }));
-    await expect(
-      command(staffId, e.id, { action: "assignPools", assignments: lateStale }),
-    ).rejects.toMatchObject({ status: 409 });
-    expect(await assignments(e.id)).toEqual(persisted);
+      invalidated.entries.every((t) => t.poolId === null && t.seed === null),
+    ).toBe(true);
+    expect(invalidated.draws[0].entries).toEqual(state.draws[0].entries);
   });
-  it("blocks invalid composition at scheduling and prevents pool changes after fixtures/results", async () => {
+  it("blocks malformed composition and dangerous redraw after scheduling", async () => {
     const e = await event();
-    await register(staffId, e.id);
+    await ready(staffId, e.id);
+    await score(staffId, e.id, "A-1", 0, 1);
     const before = (await getEvent(e.id))!;
-    // Simulate legacy malformed data; generation must defend its own gate.
-    await db.teamEntry.update({
-      where: { id: before.entries[0].id },
-      data: { poolId: before.pools[1].id },
-    });
     await expect(
-      command(staffId, e.id, { action: "generateFixtures" }),
-    ).rejects.toThrow("four");
-    expect((await getEvent(e.id))!.fixtures).toHaveLength(0);
-    const played = await event();
-    await ready(staffId, played.id);
-    await score(staffId, played.id, "A-1", 0, 1);
-    const oldState = (await getEvent(played.id))!;
-    const proposed = (await assignments(played.id)).map((a, i) => ({
-      ...a,
-      pool: i === 0 ? "B" : i === 4 ? "A" : a.pool,
-    }));
-    await expect(
-      command(staffId, played.id, {
-        action: "assignPools",
-        assignments: proposed,
+      command(staffId, e.id, {
+        action: "runDraw",
+        confirmed: true,
+        expectedDrawVersion: 1,
+        reason: "Cannot redraw after play.",
       }),
     ).rejects.toThrow("locked");
-    expect((await getEvent(played.id))!.fixtures).toEqual(oldState.fixtures);
+    expect((await getEvent(e.id))!.fixtures).toEqual(before.fixtures);
+    const other = await event();
+    await register(staffId, other.id);
+    for (const t of (await getEvent(other.id))!.entries)
+      await command(staffId, other.id, {
+        action: "confirmEntry",
+        entryId: t.id,
+      });
+    await command(staffId, other.id, {
+      action: "runDraw",
+      confirmed: true,
+      expectedDrawVersion: null,
+    });
+    const drawn = (await getEvent(other.id))!;
+    const t = drawn.entries.find((t) => t.poolId === drawn.pools[0].id)!;
+    await db.teamEntry.update({
+      where: { id: t.id },
+      data: { poolId: drawn.pools[1].id },
+    });
+    await expect(
+      command(staffId, other.id, { action: "generateFixtures" }),
+    ).rejects.toThrow("composition");
+    expect((await getEvent(other.id))!.fixtures).toHaveLength(0);
   });
   it("staff can remove/add a substitute and edit players; invalid rosters never replace valid entries", async () => {
     const e = await event();
@@ -123,8 +142,6 @@ describe("V1 setup and public projection", () => {
       action: "saveEntry",
       entryId: t.id,
       name: t.name,
-      pool: "A",
-      seed: t.seed,
       synthetic: true,
     };
     const core = t.roster
@@ -176,12 +193,15 @@ describe("V1 setup and public projection", () => {
     expect(pub.fixtures.find((f) => f.code === "A-1")!.result).toEqual({
       homeScore: 0,
       awayScore: 1,
+      kind: "PLAYED",
     });
     expect(pub.fixtures.find((f) => f.code === "A-2")!.result).toBeNull();
     for (const t of pub.entries)
       expect(Object.keys(t).sort()).toEqual(["id", "name", "poolId", "seed"]);
     for (const f of pub.fixtures)
       expect(Object.keys(f).sort()).toEqual([
+        "actualEnd",
+        "actualStart",
         "awayId",
         "awaySource",
         "code",
@@ -189,14 +209,21 @@ describe("V1 setup and public projection", () => {
         "homeId",
         "homeSource",
         "id",
+        "poolId",
+        "projectedStartsAt",
         "result",
+        "round",
         "stage",
         "startsAt",
+        "status",
       ]);
     for (const p of pub.standings)
       for (const row of p.rows)
         expect(Object.keys(row).sort()).toEqual([
           "against",
+          "average",
+          "averageGames",
+          "averageTotal",
           "diff",
           "for",
           "id",
@@ -206,10 +233,11 @@ describe("V1 setup and public projection", () => {
           "rank",
           "seed",
           "seedTiebreak",
+          "winRatio",
           "won",
         ]);
     expect(JSON.stringify(pub)).not.toMatch(
-      /roster|staff|password|checkedIn|confirmedAt|Synthetic Black|recordedAt|previousCorrections|nameKey/,
+      /roster|staff|password|checkedIn|confirmedAt|Synthetic Black|recordedAt|previousCorrections|nameKey|fibaPoints|seedScore|provenance|rngSeed|drawEntries/,
     );
   });
 });

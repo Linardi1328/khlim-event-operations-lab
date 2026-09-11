@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
-import { Clock3, MapPin, Pencil, Check } from "lucide-react";
-import { eventTime } from "@/lib/display";
+import { MapPin, Pencil, Check } from "lucide-react";
+import { stageNames } from "@/lib/competition/bracket";
+import { LiveOperations } from "./live-operations";
+import { FixtureTime } from "./fixture-time";
 import { Badge, Button, Empty, Feedback, useRequest } from "./ui";
 import { resultOf, teamName, type EventDTO } from "./operations";
 export function Games({
@@ -26,7 +28,7 @@ export function Games({
             <h2>{knockout ? "The knockout route" : "Court schedule"}</h2>
             <p>
               {knockout
-                ? "A1 × B2 · B1 × A2. Winners play the final; losers play for third."
+                ? "Qualifiers advance through the bracket. Winners follow their next game; byes favor higher qualification positions."
                 : "Confirm the agreed score. Use “Correct result” to revise a recorded game."}
             </p>
           </div>
@@ -34,16 +36,17 @@ export function Games({
             Filter by court
             <select value={court} onChange={(ev) => setCourt(ev.target.value)}>
               <option>All courts</option>
-              <option>Court 1</option>
-              <option>Court 2</option>
+              {Array.from({ length: e.courtCount }, (_, i) => (
+                <option key={i}>Court {i + 1}</option>
+              ))}
             </select>
           </label>
         </div>
         {!e.fixtures.length && (
           <>
             <p className="muted">
-              Generate the fixed benchmark schedule after confirming entries and
-              core player check-in.
+              Run the official draw, confirm entries and check in core players
+              before scheduling.
             </p>
             <Button
               busy={r.busy}
@@ -61,6 +64,7 @@ export function Games({
           </>
         )}
       </div>
+      {!knockout && e.fixtures.length > 0 && <LiveOperations event={e} />}
       {!fixtures.length ? (
         <Empty
           title={
@@ -68,7 +72,7 @@ export function Games({
           }
         >
           {knockout
-            ? "Once the schedule exists, knockout slots appear here. All pool results must be confirmed before semifinal teams are assigned."
+            ? "Once the schedule exists, knockout slots appear here. All pool results must be confirmed before playoff teams are assigned."
             : "Check in the teams, then generate fixtures. No score is different from a zero score."}
         </Empty>
       ) : (
@@ -95,6 +99,7 @@ function ScoreCard({
   const original =
     f.results.find((revision) => revision.id === correctionId) ?? result;
   const [replay, setReplay] = useState(false);
+  const [walkover, setWalkover] = useState(false);
   const ready = !!f.homeId && !!f.awayId;
   return (
     <article
@@ -106,21 +111,24 @@ function ScoreCard({
           {f.code} <span>·</span>{" "}
           {f.stage === "POOL"
             ? `Pool ${e.pools.find((p) => p.id === f.poolId)?.name}`
-            : f.stage === "SEMIFINAL"
-              ? "Semifinal"
-              : f.stage === "THIRD"
-                ? "Third place"
-                : "Championship"}
+            : stageNames[f.stage]}
         </span>
         <Badge tone={result ? "lime" : "neutral"}>
-          {result ? "CONFIRMED" : ready ? "READY" : "AWAITING TEAMS"}
+          {result
+            ? result.kind === "WALKOVER"
+              ? "WALKOVER"
+              : "CONFIRMED"
+            : ready
+              ? f.status.replaceAll("_", " ")
+              : "AWAITING TEAMS"}
         </Badge>
       </div>
       <div className="game-place">
-        <span>
-          <Clock3 size={13} />
-          {eventTime(f.startsAt)}
-        </span>
+        <FixtureTime
+          fixture={f}
+          timezone={e.timezone}
+          eventStart={e.startsAt}
+        />
         <span>
           <MapPin size={13} />
           {f.court}
@@ -133,11 +141,12 @@ function ScoreCard({
             const fd = new FormData(ev.currentTarget);
             const home = String(fd.get("homeScore")),
               away = String(fd.get("awayScore"));
-            if (home === "" || away === "") return;
+            if (!walkover && (home === "" || away === "")) return;
             const saved = await r.run(
               `/api/events/${e.id}/command`,
               {
-                action: "recordResult",
+                action: walkover ? "recordWalkover" : "recordResult",
+                winner: fd.get("winner") || undefined,
                 fixtureId: f.id,
                 homeScore: Number(home),
                 awayScore: Number(away),
@@ -152,37 +161,62 @@ function ScoreCard({
             if (saved) {
               setEditing(false);
               setReplay(false);
+              setWalkover(false);
             }
           }}
         >
-          <div className="score-rows">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={walkover}
+              onChange={(ev) => setWalkover(ev.target.checked)}
+            />
+            Record a walkover (21–0)
+          </label>
+          {walkover ? (
             <label>
-              <span>{teamName(e, f.homeId)}</span>
-              <input
-                name="homeScore"
-                type="number"
-                inputMode="numeric"
-                aria-label={`${f.code} ${teamName(e, f.homeId)} score`}
-                min={0}
-                max={50}
-                required
-                defaultValue={editing ? original?.homeScore : ""}
-              />
+              Walkover winner
+              <select name="winner">
+                <option value="HOME">{teamName(e, f.homeId)}</option>
+                <option value="AWAY">{teamName(e, f.awayId)}</option>
+              </select>
             </label>
+          ) : (
+            <div className="score-rows">
+              <label>
+                <span>{teamName(e, f.homeId)}</span>
+                <input
+                  name="homeScore"
+                  type="number"
+                  inputMode="numeric"
+                  aria-label={`${f.code} ${teamName(e, f.homeId)} score`}
+                  min={0}
+                  max={50}
+                  required
+                  defaultValue={editing ? original?.homeScore : ""}
+                />
+              </label>
+              <label>
+                <span>{teamName(e, f.awayId)}</span>
+                <input
+                  name="awayScore"
+                  type="number"
+                  inputMode="numeric"
+                  aria-label={`${f.code} ${teamName(e, f.awayId)} score`}
+                  min={0}
+                  max={50}
+                  required
+                  defaultValue={editing ? original?.awayScore : ""}
+                />
+              </label>
+            </div>
+          )}
+          {walkover && !editing && (
             <label>
-              <span>{teamName(e, f.awayId)}</span>
-              <input
-                name="awayScore"
-                type="number"
-                inputMode="numeric"
-                aria-label={`${f.code} ${teamName(e, f.awayId)} score`}
-                min={0}
-                max={50}
-                required
-                defaultValue={editing ? original?.awayScore : ""}
-              />
+              Reason for walkover
+              <textarea name="reason" minLength={8} maxLength={500} required />
             </label>
-          </div>
+          )}
           {editing && (
             <div className="correction-form">
               <p>
@@ -262,6 +296,7 @@ function ScoreCard({
                 r.clear();
                 setCorrectionId(result.id);
                 setEditing(true);
+                setWalkover(result.kind === "WALKOVER");
               }}
             >
               <Pencil size={14} />

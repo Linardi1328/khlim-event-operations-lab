@@ -98,6 +98,7 @@ export function useRequest() {
   }
   return {
     run,
+    setError,
     busy,
     error,
     success,

@@ -1,96 +1,91 @@
-# Migration lessons — Astra Experiment #002
+# Migration lessons — flexible Event OS refinement
 
-## What this experiment establishes
+The durable output is validated behavior and an adoption map, not a second production KHLIM system. This work stayed in the isolated lab. Production adaptation must wait for Organization #001 / tenancy, canonical Athlete identity, production Auth, Audit and Evidence. A green synthetic suite does not establish production readiness.
 
-The synthetic benchmark can be operated using durable event commands rather than a spreadsheet as the running source of truth. Tests exercise one complete format, explicit import commitment, correction before/after downstream play, public privacy, concurrency and restart persistence. That is evidence about this prototype and these scenarios, not production readiness or evidence that a real event will follow the same assumptions.
+## Concepts likely to survive
 
-The implementation is disposable. No production KHLIM repository, athlete database, credential, API or infrastructure was accessed. These are recommendations for later design work, not migration instructions.
+CompetitionFormat, event entries and roster snapshots, SeedingPolicy, a witnessed PoolDraw, RoundRobinGenerator, versioned StandingsPolicy/WalkoverPolicy, QualificationPolicy, BracketGraph, ScheduleProjection/EventTwinState and ImportNormalizer are useful boundaries. Their exact types and policies still need organization-owned review.
 
-## Concepts worth retaining
+A pool is a persisted event grouping; a team's membership is an official draw output. A roster is an event eligibility snapshot, not an Athlete identity. A result is an attributed revision, not a mutable number on a game card. A draw/recovery/placement approval is a decision with inputs, actor and time. Planned, projected and actual time represent three different kinds of truth.
 
-**An event-specific entry is distinct from a reusable team or athlete.** Registration needs its own lifecycle, pool assignment, roster snapshot, seed/tiebreak priority and confirmation. A future canonical team can be linked to an entry; historical event rosters must not change just because club membership changes later.
+## Facts versus projections
 
-**Roster membership and attendance are different facts.** Being eligible does not mean arriving on court. Team arrival and individual presence need separate controls. A substitute can be rostered but absent. This lab persists timestamps plus staff action history; a real product should replace the human-readable audit subject with a typed CheckInRecord referencing entry/person/role, event, actor and check-in station. Confirm whether core/substitute roles can change on event day.
+Keep authoritative event format/version, entries/rosters, point provenance, eligibility/presence decisions, draw inputs/seed/assignments, planned fixtures and graph edges, result revisions, actual observations, recovery approvals, import mappings/source hashes, publication decisions and final sign-off. Reproduce the calculation that led to each decision.
 
-**A fixture is a scheduled obligation with provenance.** It needs an event, stage, court, time, participants and sources of qualification. An empty knockout slot is still a useful scheduled fixture. Scheduling and competition results should not be conflated. The lab's text source labels and fixed code map should become explicit, versioned advancement edges if future formats require them.
+Derive standings, display statistics, capped tiebreak averages, qualification, bracket participants, next games and dashboards from those facts. Materialize fixture participants and active seed/pool assignments transactionally, with one derivation path. Never let editable totals, a manually chosen wildcard or a hand-copied winner become competing truth.
 
-**A result is an attributable revision, not two mutable number fields.** Keep the score, the participating entry snapshots, actor, time and lifecycle. Correction/void records explain what replaced what and why. The current result is a projection over this history. Database uniqueness and command preconditions reinforce each other.
+Placement sign-off is a reviewed snapshot of derived order. The lab deletes the withdrawn snapshot on a correction; production should preserve every publication/version with its input result revisions and evidence. Timing observations survive replay, but future audit should explicitly bind each observation to the participant/fixture revision it described.
 
-**Publication and sign-off are independent operations.** An event may be visible before scores exist. Staff can publish provisional standings while pool play runs. Final placements require a separate explicit review. Correcting a result must withdraw a previously approved placement snapshot rather than leave a misleading public podium.
+## Seeding and fairness
 
-## Authoritative facts versus projections
+Adding ranking points exposes the need for **input provenance and rule version**, not a manual priority field. Top-three inputs can include the substitute. Freeze what was known at the draw, even if staff later edit names or points. Do not update historical seeding when a live external ranking changes.
 
-Persist event policy/version, entries, roster membership snapshots, attendance events, fixture scheduling, result revisions, corrections/voids, publication decisions, announcements, import provenance and final sign-off. Actors and timestamps belong with each decision.
+A reproducible RNG seed plus ordered inputs and recorded algorithm is necessary for audit. It is not sufficient proof of a fair public lottery. This lab's 32-bit effective PRNG and staff-initiated redraws need an organization-owned witness/approval policy, stronger randomness commitments if required, and evidence links. Redraw reasons/history make organizer choices visible; no drag/drop or manual pool placement remains.
 
-Derive played counts, wins/losses, points totals, point difference, standings, qualification, current bracket participants, dashboard completion and event phase. Qualification assignments may be materialized for operational querying, but must reconcile from the same confirmed facts inside the result transaction. Never let an editable standings total or manually retyped semifinal team become a competing source of truth.
+Version existing events instead of silently replacing their tiebreak interpretation. Legacy data may have valid placements under its original rules. New-policy tests must coexist with migration compatibility tests rather than rewrite history to make the suite pass.
 
-Placements deserve a distinction: the proposed order is derived, while the reviewed/published snapshot is a staff decision. Its approval must identify the input result revisions or event version. This lab withdraws sign-off on any score revision; production should retain the old placement publication snapshot as historical evidence rather than delete it as this prototype does.
+## What flexible CSV ingestion revealed
 
-## What CSV migration taught us
+- Layout and semantics must be reviewed before row validation. Aliases, case/whitespace and arbitrary column order can be normalized deterministically. Both long and wide layouts reduce reformatting work for staff.
+- Ambiguous aliases cannot be guessed. The UI stops for mapping; irrelevant columns are explicitly listed as ignored. An obsolete “pool” or “seed” column must not regain placement authority.
+- A valid row is not a valid roster. Validate grouped 3–4-player rosters, slots, point values, duplicate players, conflicting teams and conflicts against persisted entries.
+- Preview is durable operational state. Store normalized rows, mapping choices, physical source lines/columns, filename/hash, reviewer/time and commit status. Revalidate under the event lock, then commit the whole batch only after explicit confirmation.
+- The original bytes are not retained here. A checksum is a linkage aid, not source evidence by itself. Production needs immutable source artifacts, source/mapping schema versions, retention/access policy and review decisions linked to Evidence.
+- Names remain a deliberately strict synthetic conflict heuristic. Real duplicate names, transliterations and changed names require canonical identity resolution, never silent merges or automatic global Athlete creation.
+- Browser testing revealed two timing boundaries: file controls must wait for hydration, and mappings must wait for header inspection. Otherwise asynchronous suggestions can overwrite an operator's choice. Server validation protects truth; it cannot replace a reliable review interaction.
 
-- **Row validation is insufficient.** A file can have individually valid rows that disagree on the same team's pool or priority. Validate file structure, each row, grouped rosters and conflicts against persisted event entries.
-- **Preview is an operational state.** Staff need to see what will be created before commitment. Store normalized preview rows; keep an explicit commit decision and revalidate under an event lock because another operator may change the event after preview.
-- **All-or-nothing is easier to explain for eight teams.** One bad row blocks this batch. The error panel states that nothing was imported. If partial imports are ever introduced, rejected/accepted subsets must be separately named and reviewed; never silently skip rows.
-- **Names are not identities.** Whitespace/case normalization catches obvious duplicates, but two real people may share a name and one person may use several spellings. This lab rejects cross-team duplicate names. Production must route ambiguous matches to identity resolution using permitted evidence; it must not mint or merge global athletes based on name strings.
-- **Column mapping does not resolve semantics.** A source field called “seed” may mean registration order, competitive ranking or a drawn tiebreak. The import contract must define it. Here it is a declared administrative tiebreak priority, not a player/team ranking product.
-- **Evidence is missing by design.** The prototype keeps filename, source row number, normalized values and staff/time. It does not retain the original bytes, checksum, mapping choices or eligibility documents. Production needs an immutable original import artifact, content hash, schema/mapping version, per-row provenance, review decisions and linked source evidence. Pending previews also need an expiry/recovery policy; this UI regenerates previews after refresh.
-- **Browser timing matters.** Browser QA found that a file selection made before hydration could be lost. The control now remains disabled until its event handler is ready. Server validation alone cannot make the import workflow reliable.
+## What correction and walkovers revealed
 
-## What result correction taught us
+The retained Black/Lime reversal demonstrates that a pool correction can change qualification. The new deep-bracket test also reverses an opening result and a pool result after later rounds are played. Updating a standings table alone is insufficient.
 
-The Black/Lime example is a dependency change, not just an arithmetic update. At 18–16, Black qualifies A2; after correction to 16–18, Lime qualifies. Recalculating a table alone leaves a wrong semifinal. Replacing a semifinal participant after play rewrites the meaning of its score.
+The chosen lab policy is atomic: simulate downstream recomputation, identify every affected started/played descendant, reject with a conflict list, then accept explicit authorized replay. Void only affected results, retain participant/score/kind/revision history, preserve unaffected games and withdraw placement sign-off. Every form must identify the revision reviewed; a refresh must not silently authorize stale edits.
 
-The validated lab policy is transactional: reconcile unplayed games; detect the complete affected played subtree; reject the first attempt with a list; accept explicit staff authorization to void and replay the affected games; keep old result participants/scores/actors/reasons; preserve unaffected games; withdraw placements. Tests cover reversal in pool qualification and reversal of a semifinal winner after medal games.
+Walkover is a distinct result kind and attributed decision. Its KHLIM 21–0 display convention affects PF/PA/PD, while its winning score is excluded from tiebreak average inputs. A played 21–0 is different. Result type corrections need the same audit/reconciliation path as numeric corrections.
 
-A conflict is not merely an error to bypass. The real organization must own the decision whether to replay, adjudicate, freeze results, disqualify an entry or republish a corrected outcome. A future correction case likely needs proposed change, evidence links, approver role, resolution, affected fixture IDs, notice/publication history and appeal state. The lab's one staff checkbox is a deliberate shortcut.
+Production needs evidence-backed correction cases, roles and appeal windows. Replay may be impossible or unfair after a real event; the organization must choose alternatives such as adjudication/freeze/withdrawal. The lab offers none of those and must not define them implicitly.
 
-Concurrent operators add another requirement: the correction form must identify the revision that was reviewed. Reusing the latest result ID after a page refresh would incorrectly authorize stale form values. The form now holds its original ID and the server rejects a stale submission.
+## Event Twin learning
 
-## Public-event learning
+An actual late finish is an observation. A later projected schedule is a proposal. Publishing it is an authorized decision. Collapsing them into one mutable start timestamp erases both the original promise and the recovery history.
 
-Public views should be explicit projections with their own privacy contract. Testing caught a spread of a full TeamEntry object into a standings row, carrying synthetic roster names into serialized public data despite hiding them visually. Explicit field selection and serialization tests fixed it. A hidden button or omitted visible text is not a privacy boundary.
+A small deterministic projector can propagate court occupancy, turnaround, shared-team rest and round barriers. Proposals must be tied to the event revision because another score/timing change can invalidate the calculation. Manual browser QA caught participant reconciliation resetting DELAYED status despite a later approved estimate; dependent projections must preserve unrelated operational facts.
 
-Players, parents and spectators primarily need their pool, next game, scores and playoff position. V1 therefore uses Overview / Pools / Schedule / Scores / Playoffs. Plain team lists answer pool membership faster than a standings table; standings remain expandable. Completed scores deserve a dedicated view. Stacked semifinal and medal-game cards communicate progression on a phone. Announcements and final placement records remain useful without occupying their own navigation tabs. Blank and zero results must remain distinct. Publication decisions should explain empty states (“not published yet”) rather than imply there are no games.
+The next disruptions should plug into this same impact/approval boundary. Court closure, late teams and extended pauses need their own typed facts and constraints. Do not copy another Event Twin repository or use AI to conceal unapproved policy. There is no venue-capacity optimizer, automatic earlier start or closing-time guarantee here.
+
+## Public and staff product slice
+
+**ADMIN: team/player setup → official draw → schedule → scores → playoffs.**
+
+**PUBLIC: pools → schedule → scores → playoffs**, with a light Overview. No public rosters, individual ranking-point values, player profiles/statistics, participant accounts, scouting or broader FIBA features.
+
+Plain team lists answer pool membership quickly. Matchup matrices and statistics become useful next to those lists as games progress. Mobile tables should scroll within a labeled region, with row headings retained; squeezing all columns into 360px makes them unreadable. Separate Scores prevents unplayed fixtures masquerading as zero results. Stacked rounds and source-game labels work for deeper brackets without a library.
+
+The explicit public projection remains a security boundary. A previous experiment caught private roster fields leaking via an object spread into standings despite being visually hidden. Keep serialization allowlist tests as well as browser privacy assertions whenever internal records expand.
 
 ## Shortcuts that must never migrate
 
-- Synthetic participant IDs/names as canonical KHLIM athlete identities.
-- Public lab staff credentials, shared global staff role, local throttle or this authentication design.
-- Hard-coded court times, format, seed tiebreaks and five-through-eight placement policy without approved competition rules.
-- Name-based identity matching or silent merging.
-- Text-only action details as the sole operational audit/provenance contract.
-- Mutable materialized fixture assignments without retained result participants and correction rules.
-- Deleting withdrawn placement snapshots instead of retaining publication versions.
-- Assuming a single local database/app equals organization ownership, permission isolation, backups or recovery.
-- In-memory form state as a queue for offline event operations.
-- The assumption that all three designated core players must check in before fixtures can even be generated; real scheduling often starts earlier.
+- Synthetic IDs, invented point values or lab account credentials as real identity/authentication.
+- Shared global staff authorization, name-only identity matching, public demo secrets or local-only throttling.
+- Unsigned 32-bit draw randomness as proof of a publicly fair lottery; text-only audit as Evidence.
+- Deleting withdrawn placement/publication versions; complete-event cascade deletion as a retention policy.
+- A fixed after-generation registration/check-in lock without real late-arrival/substitute policy.
+- Treating the custom average/forfeit/bye/placement rules as certified current Event Maker behavior.
+- Local UI forms as an offline queue, or viewport QA as real mobile-device/venue testing.
 
-## Organization ownership needed later
+## Ownership, Evidence and identity requirements
 
-Define who owns an event, its division rules, rosters, eligibility decisions, court plan and result publication. Separate registrar, check-in staff, scorer, head official and authorized correction approver where appropriate. Scope staff access to an organization and event. Define delegation, removal, retention, appeal deadlines and publication accountability. This lab intentionally has none of the multi-organization infrastructure required to enforce that policy.
+Organizations must own competition rules/version, draw approval and redraw policy, roster eligibility, scheduling resources, publication and corrections. Define scoped registrar, check-in, scorer, official and adjudicator roles; this lab's shared EVENT_STAFF is not that model.
 
-## Evidence and identity integration needed later
+Evidence integration should link original CSV artifacts, point snapshots, draw witness/approval, score sheets, timing observations and replay decisions. Preserve source versions, review lineage, access controls and retention. Keep private evidence out of public projections.
 
-Link eligibility to authoritative evidence/provenance from the future KHLIM platform, with lawful access and retention. Result entry/correction should reference signed score sheets or official attestations rather than free text alone. Attendance evidence and import source artifacts need typed links. Never copy sensitive artifacts into a public projection.
+Canonical Athlete resolution belongs to KHLIM Digital after its foundations exist. Future event-local roster snapshots should reference that authority with provenance. No real minors, guardian records, production memberships or athlete data were used here.
 
-Resolve global athlete identity through the future canonical system; keep event-local roster snapshots and mappings to that identity with provenance. Real minors, guardian relationships and production membership are entirely outside this experiment. Synthetic IDs have no mapping to real athletes and must be discarded.
+## Next field tests
 
-## Next real-world tests
-
-1. Shadow one real event with authorized synthetic/redacted observations: who actually enters, checks, verifies and corrects each fact, and when?
-2. Test delayed games, no-shows, walkovers, protests, abandoned games, overtime and late substitutes. These are absent here; do not infer policy from this schema.
-3. Measure check-in and score-entry speed with multiple tablet operators and intermittent connectivity. This lab tested browser viewports, not actual hardware or unreliable venue Wi-Fi.
-4. Review the tiebreak/qualification and places 5–8 rules with tournament organizers before choosing production semantics.
-5. Test an evidence-backed correction that cannot reasonably trigger replay. The organization must define an authorized alternative; this prototype deliberately offers none.
-6. Evaluate import samples from actual operational sources only after explicit authorization and privacy planning. How often do teams/players have ambiguous identity, inconsistent spelling, incomplete rosters or conflicting eligibility?
-7. Establish backup/restore, published-result versioning, audit retention and incident handling requirements before any production implementation.
-
-No unresolved production questions are answered merely because this synthetic suite is green.
-
-## V1 scope and pool-editing lesson
-
-Prioritize **ADMIN: team/player setup → pool assignment → schedule → scores → playoffs** and **PUBLIC: pools → schedule → scores → playoffs** for the first production-oriented KHLIM Event OS slice. Staff own roster entry. Public player rosters, detailed profiles, statistics, participant login and broader FIBA-style features are deferred. This prioritization is a product hypothesis supported by synthetic workflow/browser checks, not a measured courtside usability study.
-
-Two full pools reveal why changing a single team at a time is insufficient: moving the first team temporarily creates five entries in the destination. A reviewed, atomic whole-composition update lets staff swap teams without invalid intermediate persisted state. Original-pool comparisons reject stale edits; capacity and entry ownership are validated again under the event lock. Changing only the pool should not erase attendance or create new roster identities. The prototype safely blocks all reassignment once fixtures exist. Later policy needs organization-owned draw approval, publication/version history and deliberate rescheduling/reconciliation; do not carry over a silent reset.
-
-The public data contract needed no expansion for this refinement. Removing public navigation items did not justify deleting announcements, standings, placement sign-off or correction history. Keep authoritative facts stable while adapting participant-facing projections. Production adaptation still waits for Organization #001 / tenancy, canonical identity resolution and evidence/provenance integration described above.
+1. Shadow a real tournament with authorized/redacted observations: who records each fact, at what time, with what evidence?
+2. Review FIBA-inspired tie groups, walkover denominator treatment, wildcard comparison, byes and lower placements with qualified organizers using current rules.
+3. Test witnessed redraw governance, late substitutes, withdrawals, protests and corrections that cannot trigger replay.
+4. Measure delays, court outages, rest guarantees and estimate usefulness against actual court clocks; examine schedule feasibility before publication.
+5. Test multiple tablets, flaky venue Wi-Fi, offline drafts and recovery after a device restarts.
+6. Review diverse authorized organizer sheets for ambiguous identity/layout; measure how often aliases need human intervention.
+7. Define production publication history, ownership isolation, backup/restore, audit retention and incident procedures before adaptation.

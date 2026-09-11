@@ -35,9 +35,9 @@ export default async function Operations() {
                 {e.public ? "PUBLIC EVENT" : "DRAFT EVENT"}
               </Badge>
               <h2>{e.name}</h2>
-              <p>{eventDate(e.startsAt)}</p>
+              <p>{eventDate(e.startsAt, e.timezone)}</p>
               <div className="event-card-bottom">
-                {e._count.entries}/8 teams · {e._count.fixtures} games{" "}
+                {e._count.entries} teams · {e._count.fixtures} games{" "}
                 <span>↗</span>
               </div>
             </Link>

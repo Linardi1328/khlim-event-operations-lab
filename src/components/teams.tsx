@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Pencil, Users } from "lucide-react";
 import type { EventDTO } from "./operations";
@@ -8,6 +8,14 @@ import { PoolAssignment } from "./pool-assignment";
 export function Teams({ event: e }: { event: EventDTO }) {
   const r = useRequest();
   const [edit, setEdit] = useState<string | null>(null);
+  const editor = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!edit || !editor.current) return;
+    editor.current.scrollIntoView({ block: "start" });
+    editor.current
+      .querySelector<HTMLInputElement>('input[name="name"]')
+      ?.focus({ preventScroll: true });
+  }, [edit]);
   const locked = e.fixtures.length > 0;
   const selected = e.entries.find((t) => t.id === edit);
   return (
@@ -17,8 +25,8 @@ export function Teams({ event: e }: { event: EventDTO }) {
           <div>
             <h2>{e.entries.length} teams on the list</h2>
             <p>
-              Three core players + one optional substitute. Seed is the final
-              tiebreak.
+              Three core players + one optional substitute. The official draw
+              seeds teams using their top three ranking-point values.
             </p>
           </div>
           <div className="button-row">
@@ -29,7 +37,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
               Import CSV
             </Link>
             <Button
-              disabled={locked || e.entries.length === 8}
+              disabled={locked || e.entries.length >= e.maxTeams}
               onClick={() => setEdit("new")}
             >
               + Add team
@@ -45,7 +53,7 @@ export function Teams({ event: e }: { event: EventDTO }) {
         <Feedback request={r} />
       </section>
       {edit && (
-        <section className="panel">
+        <section className="panel" ref={editor} style={{ scrollMarginTop: 80 }}>
           <div className="section-title">
             <h2>{selected ? "Edit team entry" : "New team entry"}</h2>
             <button className="secondary" onClick={() => setEdit(null)}>
@@ -66,6 +74,8 @@ export function Teams({ event: e }: { event: EventDTO }) {
                 .map((slot) => ({
                   slot,
                   name: String(f.get(`player${slot}`) ?? "").trim(),
+                  fibaPoints: Number(f.get(`points${slot}`) || 0),
+                  pointsProvenance: "Staff entered; synthetic lab points",
                 }))
                 .filter((p) => p.name);
               if (
@@ -75,8 +85,6 @@ export function Teams({ event: e }: { event: EventDTO }) {
                     action: "saveEntry",
                     entryId: selected?.id,
                     name: f.get("name"),
-                    pool: f.get("pool"),
-                    seed: Number(f.get("seed")),
                     players,
                     synthetic: true,
                   },
@@ -96,45 +104,42 @@ export function Teams({ event: e }: { event: EventDTO }) {
                   required
                 />
               </label>
-              <label>
-                Pool
-                <select
-                  name="pool"
-                  defaultValue={
-                    e.pools.find((p) => p.id === selected?.poolId)?.name ?? "A"
-                  }
-                >
-                  <option value="A">Pool A</option>
-                  <option value="B">Pool B</option>
-                </select>
-              </label>
-              <label>
-                Seed priority (1–8)
-                <input
-                  type="number"
-                  min={1}
-                  max={8}
-                  name="seed"
-                  defaultValue={selected?.seed ?? e.entries.length + 1}
-                  required
-                />
-              </label>
             </div>
             <div className="form-grid">
               {[1, 2, 3, 4].map((slot) => (
-                <label key={slot}>
-                  {slot < 4 ? `Core player ${slot}` : "Substitute (optional)"}
-                  <input
-                    name={`player${slot}`}
-                    maxLength={80}
-                    defaultValue={
-                      selected?.roster.find((p) => p.slot === slot)?.name
-                    }
-                    required={slot < 4}
-                  />
-                </label>
+                <div key={slot}>
+                  <label>
+                    {slot < 4 ? `Core player ${slot}` : "Substitute (optional)"}
+                    <input
+                      name={`player${slot}`}
+                      maxLength={80}
+                      defaultValue={
+                        selected?.roster.find((p) => p.slot === slot)?.name
+                      }
+                      required={slot < 4}
+                    />
+                  </label>
+                  <label>
+                    Player {slot} FIBA ranking points
+                    <input
+                      name={`points${slot}`}
+                      type="number"
+                      min={0}
+                      max={100000000}
+                      defaultValue={
+                        selected?.roster.find((p) => p.slot === slot)
+                          ?.fibaPoints ?? 0
+                      }
+                    />
+                  </label>
+                </div>
               ))}
             </div>
+            <p className="muted">
+              Ranking points are staff-entered lab data, never fetched from
+              FIBA. Use 0 for an unranked player. Saving any entry invalidates
+              an existing draw; a reasoned redraw is required.
+            </p>
             <label className="checkbox">
               <input type="checkbox" required />
               These participants are synthetic.
@@ -160,8 +165,9 @@ export function Teams({ event: e }: { event: EventDTO }) {
               <div>
                 <h3>{t.name}</h3>
                 <span>
-                  Pool {e.pools.find((p) => p.id === t.poolId)?.name} · Seed{" "}
-                  {t.seed}
+                  {t.poolId
+                    ? `Pool ${e.pools.find((p) => p.id === t.poolId)?.name} · Seed ${t.seed} · ${t.seedScore ?? "legacy"} pts`
+                    : "Awaiting official draw"}
                 </span>
               </div>
               <button
@@ -185,7 +191,8 @@ export function Teams({ event: e }: { event: EventDTO }) {
                   <div>
                     <span>{p.name}</span>
                     <small>
-                      {p.slot === 4 ? "Substitute" : `Core ${p.slot}`}
+                      {p.slot === 4 ? "Substitute" : `Core ${p.slot}`} ·{" "}
+                      {p.fibaPoints} ranking pts
                     </small>
                   </div>
                   <button

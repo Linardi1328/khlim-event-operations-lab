@@ -1,70 +1,70 @@
 # Event OS integration handoff
 
-## Status and authority
+## Status and destination
 
-This is a review map for future KHLIM Digital work, not an integration implementation. The experiment stays in its own repository and database. No Digital code, schema, credentials or services were accessed. The future destination below comes from the upstream experiment protocol, not inspection of Digital internals. Validate every mapping against the actual parent architecture after Organization #001 / tenancy foundations are ready.
+This is a map for later human-reviewed adoption into **KHLIM Digital Event OS after Organization #001 / tenancy foundations**. No Digital repository, credentials, schema or infrastructure were accessed or modified. Nothing here is copied into production automatically. The isolated application shell may disappear; validated behavior, scenarios and lessons should inform future implementation.
 
-The standalone shell and all implementation choices remain replaceable. Reuse is selective and conditional on human review, competition-rule approval, architecture compatibility and production testing. Never run this lab migration against Digital or import synthetic participant records into it.
+The new baseline supports variable pool sizes/counts, seeded draws, imported ranking-point snapshots, dynamic qualification/brackets and deterministic schedule recovery. The fixed eight-team benchmark remains a compatibility/test case, not the engine boundary.
 
-## Recommended first production-oriented slice
+## Candidate modules and adoption work
 
-**ADMIN:** team/player setup → pool assignment → schedule → scores → playoffs.
+| Candidate | Lab location / validated responsibility | Required adaptation |
+|---|---|---|
+| CompetitionFormat | `src/lib/competition/format.ts`: format constraints, balanced count preview, zoned start | Organization-owned immutable policy revisions, event/division ownership, feasibility/window policy |
+| SeedingPolicy | `competition/draw.ts`: top-three imported player points, random tie ordinal | Canonical roster/athlete references, authoritative ranking snapshot provenance, approved official policy |
+| PoolDraw | `competition/draw.ts`, Draw/Entry/Player: pots, reproducibility, atomic version history | Witness/approval roles, stronger lottery requirements, Evidence and public draw disclosure |
+| RoundRobinGenerator | `domain.ts`: arbitrary/odd pools with unique pairs | Approved competition constraints, real schedule/resource policy |
+| StandingsPolicy | `domain.ts`: wins, head-to-head mini-tables, capped average, event seed | Rule-owner review, current FIBA interpretation/version, special disqualification cases |
+| WalkoverPolicy | `service.ts` + GameResult.kind + statistics: explicit 21–0 vs played | Organization-approved forfeit/no-show policy and proof; do not assume KHLIM display convention is universal |
+| QualificationPolicy | `competition/bracket.ts`: automatic + derived best remaining using win ratio | Approved selection/ranking policy, audited decision inputs; no manual wildcard copying |
+| BracketGraph | `competition/bracket.ts`, FixtureSource, service reconciliation | Event-scoped graph revisions, Evidence-backed correction cases, adjudication beyond replay |
+| ScheduleProjection / EventTwinState | `competition/schedule.ts`, Timing/Recovery records | Organization resources, disruption facts, approval roles, provenance, venue clocks/closing windows and offline handling |
+| ImportNormalizer | `csv.ts`, ImportBatch/Row/Mapping | Immutable source artifacts, mapping schema/version, canonical identity resolution, retained review decisions |
+| Result integrity | `service.ts`: revision ID, event transaction, targeted void/replay | Production Auth/Audit/Evidence, approval permissions, publication version retention |
+| Public projection / UX | `query.ts`, public views | Organization/event visibility and privacy contract; mobile validation in real usage |
 
-**PUBLIC:** pools → schedule → scores → playoffs, within a simple event Overview. The lab's five public tabs are Overview, Pools, Schedule, Scores and Playoffs. Staff own participant setup; there is no player administration on public pages. Public rosters, profiles, individual statistics, player login and broad FIBA-style functionality are deferred. Announcements and final placement records remain available without primary navigation tabs.
+These are candidates for selective adaptation, not guarantees of direct source compatibility. Keep pure rule tests while fitting Digital's eventual domain boundaries and APIs. Do not transplant this Prisma schema wholesale.
 
-Adapt this narrow validated sequence into KHLIM Digital only after Organization #001 / tenancy foundations are ready. This refinement does not authorize integration, a second athlete identity system, or migration of lab authentication/data.
+## First production-oriented slice
 
-## Reuse candidates
+**Admin:** team/player setup → official pool draw → schedule → scores → playoffs.
 
-| Candidate and location                                   | What can be adapted                                                                                   | Preconditions / required changes                                                                                                                                                                         |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/domain.ts` — `roundRobin`                       | Six non-overlapping unique pairings for a four-team pool                                              | Approve benchmark format and actual court/rest scheduling policy. Pairings alone are not a scheduling engine.                                                                                            |
-| `standings`, `qualifiers`                                | Pure aggregation, complete-pool gate, deterministic ordered qualifiers                                | Version the competition rules. Confirm wins/difference/points/seed policy with organizers; replace it if official rules differ.                                                                          |
-| `outcome`, `semifinalPairs`, `medalPairs`                | Explicit participant derivation from confirmed upstream results                                       | Fit the parent's fixture/advancement model; carry source revision IDs and organization scope.                                                                                                            |
-| `validateScore`, `validateRoster`                        | Structural checks and null-versus-zero semantics                                                      | Add approved overtime, forfeits, eligibility and roster-role policies. The 0–50 cap and mandatory core attendance are lab rules.                                                                         |
-| `src/lib/csv.ts`                                         | Strict parsing, explicit mapping, grouped validation, full-batch errors                               | Add source artifacts/checksums, saved mappings, schema versions, real identity resolution and row-level evidence. Do not use names as identity keys.                                                     |
-| `src/lib/service.ts` — result command and reconciliation | Transactional correction traversal, conflict detection, safe replay, retained history                 | Adapt the algorithm, not its authorization/database plumbing. Add typed graph edges, event revision, approval scope, official evidence, appeal/adjudication and retained placement publication versions. |
-| `assignPools` command and pool editor                    | Atomic full-pool swaps; ownership/capacity validation; stale-edit preconditions; preserves attendance | Replace text audit with typed assignment revisions, event-scoped permissions and approved post-draw policy. Existing fixtures safely block lab changes.                                                  |
-| Import commands                                          | Preview/commit distinction, revalidation under lock, exactly-once batch transition                    | Integrate tenant scope, permissions, provenance and production ingest infrastructure.                                                                                                                    |
-| `src/lib/query.ts` public projection                     | Explicit allowlist and separation of public/private DTOs                                              | Use parent visibility policy and API contracts. Retain serialization privacy regression tests.                                                                                                           |
-| Public/operator components                               | Proven workflow sequence, compact tables, stacked mobile knockout stages, visible correction consent  | Rebuild within parent design system, accessibility standards and auth/navigation. These are UX evidence, not mandatory component copies.                                                                 |
+**Public:** pools → schedule → scores → playoffs, with a simple event overview. Public roster/profile/statistics, player login/registration, payments, scouting and broad FIBA functionality remain deferred. Internal announcements, final placement sign-off and correction history remain valuable without extra primary tabs.
 
-Pure functions receive event entry IDs supplied by their caller. They do not require or define a global athlete identity. Their tests use synthetic values and can be recreated without exporting the seeded IDs.
+## Facts, projections and integration contracts
 
-## Concept mapping to review
+Authoritative facts should include the owned event/policy version; confirmed entry/roster snapshots; source point provenance; official draw input/output/version and actor; planned fixture graph; result revisions and type; actual timing observations; recovery proposals/approvals; import review/commit lineage; and publication/sign-off decisions.
 
-| Lab fact                         | Future destination concept to confirm                   | Required integration boundary                                                                       |
-| -------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Event / Pool                     | Organization-owned event and competition division/pool  | Tenant ownership, lifecycle permissions, versioned rule policy                                      |
-| TeamEntry                        | Event registration / event-specific team snapshot       | Link stable team identity if appropriate; retain historical event state                             |
-| RosterEntry                      | Event roster membership linked to canonical Athlete     | Canonical resolution, eligibility evidence, snapshot/version semantics; discard lab participant IDs |
-| Check-in timestamps + action log | Typed attendance/check-in ledger                        | Subject FK, station, actor, provenance and undo history                                             |
-| Fixture                          | Organization-owned scheduled game / court allocation    | Rescheduling, disruptions, immutable participant/result snapshots, upstream source IDs              |
-| GameResult / ResultCorrection    | Versioned result and correction/adjudication case       | Audit actor, approved authority, evidence, concurrent revision checks, conflict resolution          |
-| EventPlacement                   | Reviewed outcome publication version                    | Preserve withdrawn versions and approvals tied to input revisions                                   |
-| Announcement                     | Event communication record                              | Publication permission, audience, ownership and history                                             |
-| ImportBatch / ImportRow          | Provenance-backed import job and reviewed row decisions | Original artifact, checksum, mapping schema, identity reconciliation and safe retry                 |
-| Staff / Session                  | Existing production Auth and event-scoped authorization | Discard lab auth/accounts/tokens completely                                                         |
-| OperatorAction                   | Existing production Audit system                        | Typed subjects, decision payloads, tenant scope, immutable policy and retention                     |
+Standing totals, qualification, bracket participants, schedule estimates and dashboards are projections or materializations from those facts. Do not permit separately editable standings or copied playoff winners. Approvals must identify exactly which input version was reviewed. Preserve all historical approved publications in production; this lab withdraws/replaces the current placement snapshot.
 
-## Migration-ready tests
+Every migrated event must retain the rules it used. The lab migration keeps V1 results under LEGACY_V1 and backfills typed source edges without changing participants. Policy changes on existing real events need explicit organization authorization and reconciliation, not a software upgrade that silently changes rankings.
 
-Adapt these executable scenarios independently of the lab ORM/UI:
+## Tests worth adapting
 
-- `tests/unit/domain.test.ts`: pair completeness, deterministic ties, complete-pool gate, winner/loser propagation, invalid/self results, null versus zero, roster bounds and CSV conflict matrix.
-- `tests/integration/workflow.test.ts`: Black/Lime qualification reversal; transactional rollback when played descendants conflict; explicit targeted void/replay; unaffected results preserved; same-winner correction withdraws sign-off; concurrent writes, stale/repeated imports and public DTO privacy.
-- `tests/integration/v1.test.ts`: full-pool swaps, atomic rejection including late stale conflicts, fixture composition gate, post-fixture lock, staff roster changes, explicit public field allowlists and missing/zero/unpublished results.
-- `tests/e2e/tournament.spec.ts`: full staff-to-public journey, authorization negative matrix, CSRF, reviewed mapping, stale correction after refresh, publication toggles, long names and keyboard/mobile checks; the five V1 public views at 390×844 and 360×800; staff roster editing and stale-safe full-pool swaps.
+- Arbitrary/odd round robin uniqueness and rest/court constraints.
+- Top-three seeding, tied input totals, reproducible pot draws, balanced unequal pools and redraw audit/staleness.
+- Two-/multi-team head-to-head, capped average, walkover numerator/denominator, displayed PD and unequal inter-pool win ratios.
+- Top-N/wildcard selection; 4/8/12/16/20/24/32 bracket graphs, byes, first-round rematch avoidance and deeper progression.
+- Original Black 18–16 Lime → 16–18 correction, plus pool/opening-round reversals through played deep brackets: atomic conflict, targeted replay, unaffected history and withdrawn placements.
+- Concurrent result writers, stale open correction forms, invalid result/roster rejection, DB-scoped participants and rollback.
+- Planned/projected/actual separation, delayed start/end impact, reviewed recovery and stale proposal rejection.
+- Aliases, long/wide CSV, unknown/ambiguous mappings, ignored columns, preview confirmation, stale commits and all-or-nothing imports.
+- Unauthorized API/service mutations, Origin/JSON protection, unpublished data, public DTO allowlists and private ranking/roster regression tests.
+- Complete browser tournament operation, 390×844/360×800 navigation, unequal matrices/deep playoffs, zero scores, walkovers, mapping races and inset dropdowns.
 
-Recreate the fixtures in a parent-owned test environment. Replace staff/session setup, database helpers, route paths and publication policy assertions with parent interfaces. Keep the expected domain outcomes and adversarial cases. Never copy seed database dumps or lab auth state.
+See [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md) for the executable matrix and exact validation record. These tests use synthetic local identities and must be adapted to production fixtures rather than migrated as real participant data.
 
-## Adoption gates and unresolved risks
+## Adoption sequence and gates
 
-1. Human competition-policy review: tiebreaks, lower placements, forfeits, overtime, no-shows, late roster changes and scheduling delays.
-2. Organization ownership and event-scoped privileges integrated with existing Auth. Decide whether scorer and correction approver must differ.
-3. Canonical athlete resolution and eligibility/evidence integration. No name-only merges or automatic new permanent identities.
-4. Audit/provenance integration for imports, attendance, scores, correction approvals and publication versions.
-5. Production transaction/versioning design, backup/restore, retention, load testing, actual-device accessibility and intermittent-connectivity testing.
-6. A supervised on-court trial including corrections that cannot reasonably trigger a replay. This lab has only the replay resolution path.
+1. Establish Organization #001/tenancy ownership and scoped authorization. Decide event/division/resource ownership and allowed staff responsibilities.
+2. Review competition policies with the organization and qualified officials. Approve the current rule version, draw governance, forfeits, byes, wildcard comparison and placement semantics.
+3. Map canonical Athlete identity to event roster snapshots. Resolve ambiguity with authorized evidence; discard lab IDs and point values.
+4. Integrate production Audit/Evidence and immutable import/score/draw/timing/publication artifacts. Bind approvals to reviewed inputs and retain prior publications.
+5. Adapt pure modules behind owned domain APIs, then transactional service behavior. Replace lab authentication and all synthetic scaffolding.
+6. Re-run adapted tests, tenancy/privacy/security checks and real event shadow trials. Define offline/recovery, backup/restore, retention and operational incident policy.
 
-See MIGRATION_LESSONS.md for findings and uncertainties. Passing the synthetic benchmark justifies reviewing these candidates; it does not justify adopting the entire application or declaring Event OS ready for production.
+Unresolved: real names/identity ambiguity, independent draw fairness, unplayable late corrections, court outages and venue deadlines, late arrivals/rosters, connectivity and real-device ergonomics. No production-readiness claim is made.
+
+## Review artifacts
+
+PR #1 remains the implementation handoff on `astra/initial-event-operations-build`; do not merge without founder review. `pnpm db:demo:flex` creates a convenient eighteen-team, unequal-pool review event without modifying existing events. [README](README.md) documents setup, disposable staff access and workflows; [DOMAIN_MODEL](DOMAIN_MODEL.md) defines exact prototype semantics; [MIGRATION_LESSONS](MIGRATION_LESSONS.md) records findings and boundaries.

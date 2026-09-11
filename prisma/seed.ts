@@ -44,15 +44,15 @@ export async function seed() {
     await db.teamEntry.create({
       data: {
         eventId: e.id,
-        poolId: e.pools.find((p) => p.name === (i < 4 ? "A" : "B"))!.id,
         name,
         nameKey: key(name),
-        seed: i + 1,
         roster: {
           create: [1, 2, 3, 4].map((slot) => ({
             name: `Synthetic ${name.replace("KHLIM ", "")} ${slot}`,
             nameKey: key(`Synthetic ${name.replace("KHLIM ", "")} ${slot}`),
             slot,
+            fibaPoints: (8 - i) * 100 + slot * 10,
+            pointsProvenance: "Synthetic seed fixture; not official FIBA data",
           })),
         },
       },

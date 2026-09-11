@@ -46,6 +46,7 @@ for (const t of state.entries) {
       checked: true,
     });
 }
+await act({ action: "runDraw", expectedDrawVersion: null, confirmed: true });
 await act({ action: "generateFixtures" });
 state = (await getEvent(e.id))!;
 const scores: Record<string, [number, number]> = {
@@ -72,7 +73,8 @@ await act({
   homeScore: 16,
   awayScore: 18,
   expectedResultId: current(blackLime)!.id,
-  reason: "Synthetic review: the verified sheet reads Black 16, Lime 18.",
+  reason:
+    "Synthetic review: the verified sheet reverses the initial 18–16 result.",
 });
 for (const code of ["SF-1", "SF-2", "THIRD", "FINAL"]) {
   state = (await getEvent(e.id))!;

@@ -1,19 +1,25 @@
-export const eventTime = (date: string | Date) =>
+export const eventTime = (
+  date: string | Date,
+  timezone = "Asia/Kuala_Lumpur",
+) =>
   new Intl.DateTimeFormat("en-MY", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "Asia/Kuala_Lumpur",
+    timeZone: timezone,
   }).format(new Date(date));
-export const eventDate = (date: string | Date) =>
+export const eventDate = (
+  date: string | Date,
+  timezone = "Asia/Kuala_Lumpur",
+) =>
   new Intl.DateTimeFormat("en-MY", {
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "Asia/Kuala_Lumpur",
+    timeZone: timezone,
   }).format(new Date(date));
-export const stamp = (date: string | Date) =>
-  `${eventDate(date)}, ${eventTime(date)} MYT`;
+export const stamp = (date: string | Date, timezone = "Asia/Kuala_Lumpur") =>
+  `${eventDate(date, timezone)}, ${eventTime(date, timezone)} ${timezone}`;
 export type Serialized<T> = T extends Date
   ? string
   : T extends (infer U)[]

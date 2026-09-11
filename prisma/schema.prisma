@@ -1,201 +1,427 @@
 generator client {
   provider = "prisma-client"
-  output = "../src/generated/prisma"
+  output   = "../src/generated/prisma"
 }
+
 datasource db {
   provider = "postgresql"
 }
+
 enum Role {
   EVENT_STAFF
 }
+
 enum Stage {
   POOL
+  PLAY_IN
+  ROUND32
+  ROUND16
+  QUARTERFINAL
   SEMIFINAL
   THIRD
   FINAL
 }
+
 enum ResultStatus {
   CONFIRMED
   SUPERSEDED
   VOIDED
 }
+
 enum ImportStatus {
   PREVIEW
   COMMITTED
 }
-model Staff {
-  id String @id @default(cuid())
-  username String @unique
-  passwordHash String
-  role Role @default(EVENT_STAFF)
-  sessions Session[]
-  results GameResult[]
-  corrections ResultCorrection[]
-  imports ImportBatch[]
-  actions OperatorAction[]
+
+enum DrawStatus {
+  ACTIVE
+  SUPERSEDED
+  INVALIDATED
 }
+
+enum ResultKind {
+  PLAYED
+  WALKOVER
+}
+
+enum FixtureStatus {
+  AWAITING_RESULT
+  SCHEDULED
+  DELAYED
+  READY
+  IN_PROGRESS
+  COMPLETED
+  WALKOVER
+  REPLAY_REQUIRED
+}
+
+enum SourceKind {
+  QUALIFIER
+  WINNER
+  LOSER
+  POOL_RANK
+}
+
+enum ProposalStatus {
+  PROPOSED
+  APPLIED
+}
+
+model Staff {
+  id                String             @id @default(cuid())
+  username          String             @unique
+  passwordHash      String
+  role              Role               @default(EVENT_STAFF)
+  draws             Draw[]
+  recoveryProposals RecoveryProposal[]
+  timings           FixtureTiming[]
+  sessions          Session[]
+  results           GameResult[]
+  corrections       ResultCorrection[]
+  imports           ImportBatch[]
+  actions           OperatorAction[]
+}
+
 model Session {
-  id String @id
-  staffId String
-  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  id        String   @id
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
   expiresAt DateTime
 }
+
 model Event {
-  id String @id @default(cuid())
-  name String
-  slug String @unique
-  startsAt DateTime
-  venue String
-  overview String
-  public Boolean @default(false)
-  schedulePublished Boolean @default(false)
-  resultsPublished Boolean @default(false)
+  id                    String              @id @default(cuid())
+  name                  String
+  slug                  String              @unique
+  startsAt              DateTime
+  timezone              String              @default("Asia/Kuala_Lumpur")
+  plannedStart          String              @default("09:00")
+  courtCount            Int                 @default(2)
+  poolCount             Int                 @default(2)
+  expectedTeams         Int                 @default(8)
+  maxTeams              Int                 @default(128)
+  automaticQualifiers   Int                 @default(2)
+  wildcardCount         Int                 @default(0)
+  knockoutSize          Int                 @default(4)
+  thirdPlace            Boolean             @default(true)
+  slotMinutes           Int                 @default(15)
+  restMinutes           Int                 @default(10)
+  turnaroundMinutes     Int                 @default(0)
+  formatVersion         String              @default("KHLIM_3X3_V2")
+  standingsVersion      String              @default("FIBA_INSPIRED_V2")
+  scheduleRevision      Int                 @default(0)
+  draws                 Draw[]
+  recoveryProposals     RecoveryProposal[]
+  venue                 String
+  overview              String
+  public                Boolean             @default(false)
+  schedulePublished     Boolean             @default(false)
+  resultsPublished      Boolean             @default(false)
   placementsConfirmedAt DateTime?
-  createdAt DateTime @default(now())
-  pools Pool[]
-  entries TeamEntry[]
-  fixtures Fixture[]
-  announcements EventAnnouncement[]
-  placements EventPlacement[]
-  imports ImportBatch[]
-  actions OperatorAction[]
+  createdAt             DateTime            @default(now())
+  pools                 Pool[]
+  entries               TeamEntry[]
+  fixtures              Fixture[]
+  announcements         EventAnnouncement[]
+  placements            EventPlacement[]
+  imports               ImportBatch[]
+  actions               OperatorAction[]
 }
+
 model Pool {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  name String
-  entries TeamEntry[]
-  fixtures Fixture[]
+  id          String          @id @default(cuid())
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  entries     TeamEntry[]
+  fixtures    Fixture[]
+  drawEntries DrawEntry[]
+  sources     FixtureSource[]
+
   @@unique([eventId, name])
   @@unique([id, eventId])
 }
+
 model TeamEntry {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  poolId String
-  pool Pool @relation(fields: [poolId, eventId], references: [id, eventId])
-  name String
-  nameKey String
-  seed Int
-  confirmedAt DateTime?
-  checkedInAt DateTime?
-  roster RosterEntry[]
-  homeGames Fixture[] @relation("Home")
-  awayGames Fixture[] @relation("Away")
-  placements EventPlacement[]
+  id             String           @id @default(cuid())
+  eventId        String
+  event          Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  poolId         String?
+  pool           Pool?            @relation(fields: [poolId, eventId], references: [id, eventId])
+  name           String
+  nameKey        String
+  seed           Int?
+  seedScore      Int?
+  seedingVersion String?
+  createdAt      DateTime         @default(now())
+  drawEntries    DrawEntry[]
+  confirmedAt    DateTime?
+  checkedInAt    DateTime?
+  roster         RosterEntry[]
+  homeGames      Fixture[]        @relation("Home")
+  awayGames      Fixture[]        @relation("Away")
+  placements     EventPlacement[]
+
   @@unique([eventId, nameKey])
   @@unique([eventId, seed])
   @@unique([id, eventId])
 }
+
 model RosterEntry {
-  id String @id @default(cuid())
-  entryId String
-  entry TeamEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  name String
-  nameKey String
-  slot Int
-  checkedInAt DateTime?
+  id               String    @id @default(cuid())
+  entryId          String
+  entry            TeamEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  name             String
+  nameKey          String
+  slot             Int
+  fibaPoints       Int       @default(0)
+  pointsProvenance String    @default("Unranked; lab default")
+  checkedInAt      DateTime?
+
   @@unique([entryId, nameKey])
   @@unique([entryId, slot])
 }
+
 model Fixture {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  poolId String?
-  pool Pool? @relation(fields: [poolId, eventId], references: [id, eventId])
-  code String
-  stage Stage
-  court String
-  startsAt DateTime
-  homeId String?
-  home TeamEntry? @relation("Home", fields: [homeId, eventId], references: [id, eventId])
-  awayId String?
-  away TeamEntry? @relation("Away", fields: [awayId, eventId], references: [id, eventId])
-  homeSource String
-  awaySource String
-  results GameResult[]
+  id                String          @id @default(cuid())
+  eventId           String
+  event             Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  poolId            String?
+  pool              Pool?           @relation(fields: [poolId, eventId], references: [id, eventId])
+  code              String
+  stage             Stage
+  court             String
+  startsAt          DateTime
+  projectedStartsAt DateTime
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  status            FixtureStatus   @default(SCHEDULED)
+  round             Int             @default(0)
+  sources           FixtureSource[] @relation("TargetFixture")
+  descendants       FixtureSource[] @relation("SourceFixture")
+  timings           FixtureTiming[]
+  recoveryItems     RecoveryItem[]
+  homeId            String?
+  home              TeamEntry?      @relation("Home", fields: [homeId, eventId], references: [id, eventId])
+  awayId            String?
+  away              TeamEntry?      @relation("Away", fields: [awayId, eventId], references: [id, eventId])
+  homeSource        String
+  awaySource        String
+  results           GameResult[]
+
+  @@unique([id, eventId])
   @@unique([eventId, code])
   @@unique([eventId, court, startsAt])
 }
+
 model GameResult {
-  id String @id @default(cuid())
-  fixtureId String
-  fixture Fixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
-  homeId String
-  awayId String
-  homeScore Int
-  awayScore Int
-  status ResultStatus @default(CONFIRMED)
-  recordedAt DateTime @default(now())
-  staffId String
-  staff Staff @relation(fields: [staffId], references: [id])
-  previousCorrections ResultCorrection[] @relation("Previous")
+  id                     String             @id @default(cuid())
+  fixtureId              String
+  fixture                Fixture            @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  homeId                 String
+  awayId                 String
+  homeScore              Int
+  awayScore              Int
+  kind                   ResultKind         @default(PLAYED)
+  status                 ResultStatus       @default(CONFIRMED)
+  recordedAt             DateTime           @default(now())
+  staffId                String
+  staff                  Staff              @relation(fields: [staffId], references: [id])
+  previousCorrections    ResultCorrection[] @relation("Previous")
   replacementCorrections ResultCorrection[] @relation("Replacement")
+
   @@index([fixtureId, status])
 }
+
 model ResultCorrection {
-  id String @id @default(cuid())
-  previousId String
-  previous GameResult @relation("Previous", fields: [previousId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  previousId    String
+  previous      GameResult  @relation("Previous", fields: [previousId], references: [id], onDelete: Cascade)
   replacementId String?
-  replacement GameResult? @relation("Replacement", fields: [replacementId], references: [id])
-  reason String
-  staffId String
-  staff Staff @relation(fields: [staffId], references: [id])
-  createdAt DateTime @default(now())
+  replacement   GameResult? @relation("Replacement", fields: [replacementId], references: [id])
+  reason        String
+  staffId       String
+  staff         Staff       @relation(fields: [staffId], references: [id])
+  createdAt     DateTime    @default(now())
 }
+
 model EventPlacement {
-  id String @id @default(cuid())
+  id      String    @id @default(cuid())
   eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event   Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   entryId String
-  entry TeamEntry @relation(fields: [entryId, eventId], references: [id, eventId])
-  place Int
+  entry   TeamEntry @relation(fields: [entryId, eventId], references: [id, eventId])
+  place   Int
+
   @@unique([eventId, place])
   @@unique([eventId, entryId])
 }
+
 model EventAnnouncement {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  text String
-  published Boolean @default(true)
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  text      String
+  published Boolean  @default(true)
   createdAt DateTime @default(now())
 }
+
 model ImportBatch {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  staffId String
-  staff Staff @relation(fields: [staffId], references: [id])
-  filename String
-  status ImportStatus @default(PREVIEW)
-  createdAt DateTime @default(now())
+  id          String          @id @default(cuid())
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staffId     String
+  staff       Staff           @relation(fields: [staffId], references: [id])
+  filename    String
+  status      ImportStatus    @default(PREVIEW)
+  createdAt   DateTime        @default(now())
   committedAt DateTime?
-  rows ImportRow[]
+  layout      String          @default("long")
+  sourceHash  String          @default("legacy-unavailable")
+  mappings    ImportMapping[]
+  rows        ImportRow[]
 }
+
 model ImportRow {
-  id String @id @default(cuid())
-  batchId String
-  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  line Int
-  team String
-  player String
-  pool String
-  seed Int
-  slot Int
-  @@unique([batchId, line])
+  id           String      @id @default(cuid())
+  batchId      String
+  batch        ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  line         Int
+  team         String
+  player       String
+  pool         String      @default("")
+  seed         Int         @default(0)
+  fibaPoints   Int         @default(0)
+  playerColumn String      @default("player")
+  pointsColumn String      @default("")
+  slot         Int
+
+  @@unique([batchId, line, slot])
 }
+
 model OperatorAction {
-  id String @id @default(cuid())
-  eventId String
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  staffId String
-  staff Staff @relation(fields: [staffId], references: [id])
-  kind String
-  detail String
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id])
+  kind      String
+  detail    String
   createdAt DateTime @default(now())
+}
+
+model Draw {
+  id               String      @id @default(cuid())
+  eventId          String
+  event            Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  version          Int
+  status           DrawStatus  @default(ACTIVE)
+  algorithmVersion String
+  seedingVersion   String
+  rngSeed          String
+  reason           String
+  staffId          String
+  staff            Staff       @relation(fields: [staffId], references: [id])
+  createdAt        DateTime    @default(now())
+  entries          DrawEntry[]
+
+  @@unique([eventId, version])
+}
+
+model DrawEntry {
+  id         String       @id @default(cuid())
+  drawId     String
+  draw       Draw         @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  entryId    String
+  entry      TeamEntry    @relation(fields: [entryId], references: [id], onDelete: NoAction)
+  teamName   String
+  inputOrder Int
+  seedScore  Int
+  eventSeed  Int
+  tieBreak   Int
+  pot        Int
+  poolId     String
+  pool       Pool         @relation(fields: [poolId], references: [id], onDelete: NoAction)
+  players    DrawPlayer[]
+
+  @@unique([drawId, entryId])
+  @@unique([drawId, eventSeed])
+}
+
+model DrawPlayer {
+  id          String    @id @default(cuid())
+  drawEntryId String
+  drawEntry   DrawEntry @relation(fields: [drawEntryId], references: [id], onDelete: Cascade)
+  name        String
+  slot        Int
+  points      Int
+  provenance  String
+}
+
+model FixtureSource {
+  id              String     @id @default(cuid())
+  eventId         String
+  fixtureId       String
+  fixture         Fixture    @relation("TargetFixture", fields: [fixtureId, eventId], references: [id, eventId], onDelete: Cascade)
+  side            String
+  kind            SourceKind
+  qualifierRank   Int?
+  sourceFixtureId String?
+  sourceFixture   Fixture?   @relation("SourceFixture", fields: [sourceFixtureId, eventId], references: [id, eventId], onDelete: NoAction)
+  poolId          String?
+  pool            Pool?      @relation(fields: [poolId, eventId], references: [id, eventId], onDelete: NoAction)
+  poolRank        Int?
+
+  @@unique([fixtureId, side])
+}
+
+model FixtureTiming {
+  id        String    @id @default(cuid())
+  fixtureId String
+  fixture   Fixture   @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  startedAt DateTime
+  endedAt   DateTime?
+  reason    String
+  staffId   String
+  staff     Staff     @relation(fields: [staffId], references: [id])
+  createdAt DateTime  @default(now())
+}
+
+model RecoveryProposal {
+  id               String         @id @default(cuid())
+  eventId          String
+  event            Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staffId          String
+  staff            Staff          @relation(fields: [staffId], references: [id])
+  baseRevision     Int
+  algorithmVersion String
+  reason           String
+  court            String?
+  delayMinutes     Int            @default(0)
+  status           ProposalStatus @default(PROPOSED)
+  createdAt        DateTime       @default(now())
+  appliedAt        DateTime?
+  items            RecoveryItem[]
+}
+
+model RecoveryItem {
+  id         String           @id @default(cuid())
+  proposalId String
+  proposal   RecoveryProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  fixtureId  String
+  fixture    Fixture          @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  previous   DateTime
+  proposed   DateTime
+
+  @@unique([proposalId, fixtureId])
+}
+
+model ImportMapping {
+  id      String      @id @default(cuid())
+  batchId String
+  batch   ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  field   String
+  column  String
+
+  @@unique([batchId, field])
 }

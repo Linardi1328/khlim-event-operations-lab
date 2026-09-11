@@ -1,89 +1,91 @@
 # Architecture
 
-## Scope and runtime
+## Runtime and isolation
 
-One Next.js 16 App Router application, React 19, TypeScript, Tailwind CSS 4 and custom CSS; one PostgreSQL 17 database; Prisma 7 with the `@prisma/adapter-pg` driver adapter. Node 24 and pnpm 10. No external runtime service, AI provider, deployment platform or production KHLIM dependency.
-
-This follows the [Next.js App Router model](https://nextjs.org/docs/app/getting-started) and [Prisma 7 driver adapter setup](https://www.prisma.io/docs/orm/v7). The lockfile fixes the exact dependency graph. The local database has a separate Docker volume and loopback-only port. There is no production deployment configuration.
+One Next.js 16 / React 19 / TypeScript application, Tailwind CSS 4 plus custom CSS, Prisma 7's PostgreSQL adapter and one local PostgreSQL 17 database. Node 24 and pnpm 10.15.0; dependencies remain lockfile-pinned. No new runtime dependency was added for this refinement. No Digital, Event Twin repository, FIBA service, AI provider, paid infrastructure or deployment integration.
 
 ```mermaid
 flowchart LR
-  O[Operator browser] -->|HttpOnly session + same origin JSON| R[Next route handlers]
-  R --> A[Server authorization]
-  A --> C[Typed event commands]
-  C -->|Event lock + transaction| P[(PostgreSQL)]
-  P --> Q[Queries + deterministic projections]
-  Q --> S[Server rendered operator pages]
-  Q --> W[Explicit public projection]
-  W --> U[Unauthenticated mobile pages]
+  Staff[Staff browser] --> Auth[Session + Origin + typed input]
+  Auth --> Commands[Event commands]
+  Commands --> Lock[Event row lock / transaction]
+  Lock --> DB[(PostgreSQL facts)]
+  DB --> Rules[Versioned deterministic rules]
+  Rules --> Desk[Operator projections]
+  Rules --> Allowlist[Public DTO allowlist]
+  Allowlist --> Public[Overview / Pools / Schedule / Scores / Playoffs]
 ```
 
-## Code organization
+## Module boundaries
 
-- `src/lib/domain.ts`: pure fixture, standings, qualification, roster and score rules.
-- `src/lib/csv.ts`: strict parsing, column mapping, row/group conflict validation.
-- `src/lib/service.ts`: all operator event commands, transaction boundaries and reconciliation.
-- `src/lib/query.ts`: database reads, active-result lookup, event phase, public allowlist.
-- `src/lib/auth.ts`, `http.ts`: staff sessions, scrypt, request validation, authorization and errors.
-- `src/app/api/`: JSON handlers. Every mutation requires staff authorization (except sign-in), checks Origin, validates input, and delegates to the service.
-- `src/app/ops/`: staff dashboard and event operations. Unauthenticated requests redirect to sign-in.
-- `src/app/events/`: public pages using only the public projection; draft events return 404.
-- `prisma/`: explicit schema, SQL migration with constraints, synthetic seed.
-- `tests/`: pure rules, real PostgreSQL integration, browser workflows.
+| Module | Responsibility |
+|---|---|
+| `competition/format.ts` | CompetitionFormat validation, pool/game count preview, IANA wall-time conversion |
+| `competition/draw.ts` | SeedingPolicy, reproducible RNG, balanced seeded-pot PoolDraw |
+| `domain.ts` | Roster/score validation, arbitrary RoundRobinGenerator, versioned StandingsPolicy and WalkoverPolicy statistics |
+| `competition/bracket.ts` | QualificationPolicy, cross-pool ranking, BracketGraph, bye positions, first-round opponent matching |
+| `competition/schedule.ts` | Original schedule allocation and deterministic ScheduleProjection / EventTwinState impact calculation |
+| `csv.ts` | ImportNormalizer: header inspection, aliases, long/wide layouts, typed rows and grouped conflicts |
+| `service.ts` | Authorized transactional commands, materialization, revisions, graph reconciliation and approval gates |
+| `query.ts` | Explicit event include, current-result selection, qualification and public/private projections |
+| `auth.ts`, `http.ts` | Lab authentication, Origin/JSON checks, bounded requests and controlled errors |
+| `src/components/` | Staff forms and public views; shared select CSS and time/statistics views |
 
-## Persistence and concurrency
+Algorithms are pure where practical. The service supplies database facts, generated randomness and the actor, then persists typed decisions. It does not hide an entire event in JSON or let a UI bracket become a second result store.
 
-Every event command executes in one database transaction after acquiring `SELECT … FOR UPDATE` on its Event row. Imports, entry edits, check-in, scores, correction reconciliation, sign-off and publication therefore serialize per event. Different events are independent. Database constraints enforce unique event team names/seeds, pool names, slots, court/time slots, current result, distinct opponents and valid scores. Composite foreign keys prevent cross-event fixture and placement participants.
+## Authority and concurrency
 
-The result form supplies the exact current result ID (or null for first entry). A stale ID yields HTTP 409. Correction forms retain the ID they loaded even if the surrounding page refreshes. Concurrent first submissions cannot both succeed. The partial PostgreSQL unique index permits at most one CONFIRMED result per fixture, while retaining all historical revisions.
+Every event command authorizes EVENT_STAFF, acquires `SELECT … FOR UPDATE` on Event, and runs in one PostgreSQL transaction (60-second ceiling for bounded large imports/draws). Creation uses a nested atomic event/pool/audit write. Cross-event FK constraints scope fixtures, participants, placements and bracket sources. Unique indexes guard event names/seeds/slots, court/planned-time collisions, one active draw and one CONFIRMED result per fixture.
 
-Read pages are dynamic and uncached. PostgreSQL reads are the source of truth; browser state is limited to unsaved forms, mapping selection and feedback. Restarting the app or opening a new DB connection recovers results, sessions, entries, standings inputs, import batches and placements. Pending CSV previews are durable in the database; the current UI asks the user to regenerate the preview after a refresh rather than offering a preview inbox.
+Concurrency tokens serve different reviewed decisions:
 
-## Command gates
+- Result entry/correction: exact current result ID or null. The browser retains the reviewed ID through refresh; stale writes return 409.
+- Draw/redraw: expected latest draw version. Concurrent first draws cannot both succeed; redraw requires explicit consent and reason.
+- Timing observation/recovery: event schedule revision. Observations, results and projection approval increment it. A stale proposal cannot be applied.
+- CSV commit: batch ownership/status plus revalidation against current entries under the event lock. Explicit human confirmation is mandatory. Failed batches commit no teams.
 
-| Action                       | Required state                                                       | Result                                                                |
-| ---------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Save/import entries          | No fixtures                                                          | Valid new roster, or edited roster with confirmation/check-in reset   |
-| Assign pools                 | No fixtures; all 8 entries; exactly 4 per pool; original pools match | Atomic pool changes and actor audit; roster/attendance retained       |
-| Confirm entry                | Valid 3–4 player roster                                              | Confirmation timestamp and actor audit                                |
-| Check in                     | Entry confirmed; no fixtures                                         | Team/player presence timestamp and actor audit                        |
-| Generate schedule            | 8 confirmed teams, 4/pool, teams + 3 core players present            | 12 immutable pool games + 4 linked knockout slots; registration locks |
-| Record score                 | Two qualified, distinct participants; valid unequal scores           | Confirmed result; standings and descendants recomputed                |
-| Correct score                | Exact previous revision + reason                                     | New revision and correction; old score preserved                      |
-| Resolve dangerous correction | Explicit authorized replay after conflict review                     | Affected results voided; descendants repopulated; sign-off removed    |
-| Confirm placements           | All 16 games have current results                                    | Unique complete 1–8 order and sign-off timestamp                      |
-| Publish results              | Generated and published schedule                                     | Public scores/standings; signed-off placements if available           |
+Database records survive refresh/restarts. Forms hold only unsaved edits and feedback. Pending CSV previews persist, but the UI regenerates them after refresh; there is no preview inbox or offline queue.
 
-No result is stored as a client draft. Typing scores is an unsaved form; clicking Confirm creates the authoritative fact. An event phase is derived from its state; no independently editable phase flag can contradict the games.
+## Important gates
 
-## Correction algorithm
+| Command | Gate and effect |
+|---|---|
+| Save/import entries | No fixtures; valid complete roster and capacity. Invalidate active draw and clear derived assignments/seeds; edit resets that team's confirmation/presence. |
+| Official draw | All entries eligible/confirmed; actual count supports format. Generate server randomness, snapshot inputs and commit all seeds/assignments atomically. |
+| Redraw | No fixtures, expected version, explicit consent and reason; retain previous draw. No manual pool/seed selection API. |
+| Generate fixtures | Active draw, balanced complete pool assignments, valid format and team/core-player check-in. Create pool fixtures and typed bracket edges. |
+| Record played/walkover result | Two qualified distinct teams; valid score, exact revision; walkover requires a winner and reason. Reconcile descendants and withdraw placements. |
+| Observe timing | Qualified participants, exact schedule revision, valid timestamps; append observation and update current actual timing. |
+| Propose / approve recovery | Calculate impact without changing public estimates; apply only an explicit fresh approval. Preserve planned times. |
+| Confirm placements | Every generated fixture has a current result; create the complete reviewed placement order. |
+| Publish | Schedule required before results; hiding schedule also hides results. Public overview is independently controlled. |
 
-Inside the event transaction, supersede the previous result, append the replacement, and recompute pool tables. Once both pools finish, derive the semifinal participants; derive medal-game participants from semifinal winners/losers. Traverse SF-1, SF-2, FINAL, THIRD in dependency order.
+## Generalized correction reconciliation
 
-When participants differ, an unplayed game can update directly. A played game is a conflict. The transaction simulates its removal to identify affected descendants. Without replay authorization, throw 409 and roll back **everything**, including the replacement result and any fixture changes. With authorization, mark each affected result VOIDED and append a correction record explaining the replay. Persist the reconciled participants. Keep all unaffected results.
+After appending a replacement revision, derive pool standings and the qualified list. Reproduce deterministic bracket slots, then traverse fixtures in topological round order. A source is QUALIFIER, upstream WINNER/LOSER, or POOL_RANK for migrated V1 fixtures. Resolve each side from the same confirmed facts.
 
-Every score change deletes the current placement snapshot and clears sign-off, even if winners are unchanged. Public scores remain visible when already published, so public state reflects the corrected truth; final placements disappear until reconfirmed. There is no automatic quiet rewriting of played history and no option to keep contradictory results as current.
+If participants change, unstarted/unplayed fixtures update directly. Any result or actual start is a conflict. Simulate removing that game's current outcome so the traversal finds all affected descendants. Without replay authorization, throw 409 and roll back every attempted change. With explicit authorization, mark affected results VOIDED, append ResultCorrection records, clear current actual timing for replay, and materialize new participants. Preserve result snapshots, timing observations and unaffected games. Existing projected delays survive participant reconciliation.
 
-## Security boundary
+Every result change withdraws current placement sign-off, including a score correction that leaves the winner unchanged. Published scores reflect the new current truth; final placements disappear until reviewed again. There is no option to keep a contradictory played descendant current.
 
-The staff account is synthetic and intentionally public. Password hashes use random salts and scrypt. Random session tokens are stored only as SHA-256 hashes in PostgreSQL, expire after eight hours, and are revoked on sign-out. Cookies are HttpOnly/SameSite=Strict, and Secure when `APP_ORIGIN` is HTTPS. Local HTTP is the validated mode. Staff role is rechecked server-side on every command; there is no client-only authorization. POST handlers reject missing/foreign Origin and non-JSON content. Schemas restrict allowed fields, size and enum values. React renders user text without raw HTML.
+## Planning and Event Twin foundation
 
-The public projection explicitly selects fields rather than spreading database objects. A regression test caught internal roster data leaking through a standings spread; the derived Standing record now also selects only id/name/seed and computed values. Tests check both rendered public pages and serialized projections.
+Planning uses the configured start, court count, slot duration, court turnaround and minimum team rest. Circle-method pool fixtures are allocated greedily to the earliest available court. Pool play finishes before playoffs; later playoff rounds start only after the previous round plus rest. These conservative barriers also cover entrants not yet known. Planned times are immutable through the command API.
 
-Lab shortcuts: shared staff role across lab events, a process-local login throttle, no account enrollment/recovery, no scoped organizational roles, no session administration UI and no production security certification. These are never migration candidates.
+Live projection consumes current fixtures, approved estimates and actual observations. It propagates court occupancy, shared-team rest and round barriers, optionally adding a delay to the next unstarted game on a court. Completed/started games stay factual. Only unstarted games can receive later estimates, and no game is pulled earlier automatically. RecoveryProposal/RecoveryItem hold old/new estimates and the input schedule revision; approval records status/time and an actor-linked OperatorAction. This is the reusable pattern **state → disruption → impact → proposal → staff approval → public projection**, with no autonomous recovery.
 
-## Scheduling and operator UX
+Court outages, late teams and pauses can later supply additional constraints to this pure projector. This prototype does not solve them, optimize court swaps, enforce a venue closing time or integrate another Event Twin implementation.
 
-Times are persisted in UTC and displayed in Asia/Kuala_Lumpur (MYT). A date entered in the event form starts at 09:00 local time. Each pool owns a court; six sequential 15-minute games per court, with no overlaps. Semifinals are simultaneous at 11:00 on two courts; bronze is 11:30 on Court 1; final is 12:00 on Court 1. Pool fixture pairs use a three-round four-team rotation. Within-round games run sequentially on their pool's court.
+## Security and privacy
 
-The dashboard exposes completion gates and blockers. Staff can filter court schedules, enter scores with numeric keyboards, and explicitly correct existing results. Public navigation uses compact tables and vertically stacked bracket stages on mobile. Focus outlines, skip links, labeled forms, busy/disabled states and inline errors support keyboard use. Score values of zero render as `0`; absent results render as an em dash.
+All mutations require staff authorization on the server, including direct service calls. JSON handlers also enforce Origin and content type. Requests are bounded at 2 MB; imports at 1 MB/512 rows/100 columns. Lab sessions use salted scrypt passwords, hashed random tokens, expiry and HttpOnly/SameSite=Strict cookies. This public seeded account, shared event-wide role and process-local login throttle are disposable.
 
-## Operational limitations
+Public DTOs explicitly allow event facts, team names/pools/event seeds, published fixture/result summaries, computed team standings, announcements and approved placements. No roster names, individual ranking points, point provenance, staff identities, draw RNG, import rows, corrections, passwords or sessions are serialized publicly. Result publication and actual operational timing are separate: schedule can expose real start/end times while scores remain unpublished.
 
-This experiment does not test physical-event officiating, connectivity outages, overtime rules, walkovers, weather delays or schedule adjustments. There is no queued offline mutation, polling or push feed; use Refresh. Roster edits and check-in lock when scheduling, so late substitutes require a different future policy. The app is single-process local-first, not a production incident, backup, retention or disaster-recovery design.
+Shared form labels/focus, native selects with one inset chevron style, numeric score inputs, table-contained horizontal scrolling and stacked mobile playoff rounds support courtside use. Browser QA includes busy states, mapping races and stale correction forms, not just rendered screenshots.
 
-## V1 refinement
+## Migration compatibility
 
-No database migration or new results store was required. `assignPools` uses the existing Event row lock, validates the complete eight-entry assignment set and capacity, compares each submitted `expectedPool` with current persisted assignment, and updates only `TeamEntry.poolId`. Any invalid/stale entry rolls the entire transaction back. The form retains its original assignments across refreshes. `POOLS_ASSIGNED` records actor/time and old/new pools. Rosters, confirmation and attendance are unchanged. Fixture generation still independently checks four teams in each pool, and any existing fixture blocks reassignment.
+Migration 002 adds flexible policies and typed records, backfills planned projections, retains every old result, and marks old events LEGACY_V1. It converts V1 source labels to POOL_RANK/WINNER/LOSER edges without changing participants. Migrations 003–004 preserve individual-reference integrity while deferring intra-event FK checks so a full synthetic-event reset can finish its cascades. Migration 005 distinguishes an actual finish awaiting score confirmation from IN_PROGRESS.
 
-The public shell has five views: Overview, Pools, Schedule, Scores, Playoffs. It receives the existing explicit public DTO; no roster or staff object crosses that boundary. Counts and status use published facts. Pool lists derive from entry pool IDs; completed-score cards use the same current GameResult projection as schedules. The benchmark's four playoff source labels describe progression without a bracket engine. Final placements appear within Playoffs and the champion appears on Overview. Standings remain expandable in Pools; announcements remain on Overview. Legacy public query links redirect to these views.
+Individual referenced pool/entry/source deletion still fails; only complete event deletion/reset is exposed by local scripts. These lab deletion semantics are not a production audit-retention policy.
