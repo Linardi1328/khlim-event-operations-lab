@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  EVENT_STAFF
+}
+enum Stage {
+  POOL
+  SEMIFINAL
+  THIRD
+  FINAL
+}
+enum ResultStatus {
+  CONFIRMED
+  SUPERSEDED
+  VOIDED
+}
+enum ImportStatus {
+  PREVIEW
+  COMMITTED
+}
+model Staff {
+  id String @id @default(cuid())
+  username String @unique
+  passwordHash String
+  role Role @default(EVENT_STAFF)
+  sessions Session[]
+  results GameResult[]
+  corrections ResultCorrection[]
+  imports ImportBatch[]
+  actions OperatorAction[]
+}
+model Session {
+  id String @id
+  staffId String
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+}
+model Event {
+  id String @id @default(cuid())
+  name String
+  slug String @unique
+  startsAt DateTime
+  venue String
+  overview String
+  public Boolean @default(false)
+  schedulePublished Boolean @default(false)
+  resultsPublished Boolean @default(false)
+  placementsConfirmedAt DateTime?
+  createdAt DateTime @default(now())
+  pools Pool[]
+  entries TeamEntry[]
+  fixtures Fixture[]
+  announcements EventAnnouncement[]
+  placements EventPlacement[]
+  imports ImportBatch[]
+  actions OperatorAction[]
+}
+model Pool {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name String
+  entries TeamEntry[]
+  fixtures Fixture[]
+  @@unique([eventId, name])
+  @@unique([id, eventId])
+}
+model TeamEntry {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  poolId String
+  pool Pool @relation(fields: [poolId, eventId], references: [id, eventId])
+  name String
+  nameKey String
+  seed Int
+  confirmedAt DateTime?
+  checkedInAt DateTime?
+  roster RosterEntry[]
+  homeGames Fixture[] @relation("Home")
+  awayGames Fixture[] @relation("Away")
+  placements EventPlacement[]
+  @@unique([eventId, nameKey])
+  @@unique([eventId, seed])
+  @@unique([id, eventId])
+}
+model RosterEntry {
+  id String @id @default(cuid())
+  entryId String
+  entry TeamEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  name String
+  nameKey String
+  slot Int
+  checkedInAt DateTime?
+  @@unique([entryId, nameKey])
+  @@unique([entryId, slot])
+}
+model Fixture {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  poolId String?
+  pool Pool? @relation(fields: [poolId, eventId], references: [id, eventId])
+  code String
+  stage Stage
+  court String
+  startsAt DateTime
+  homeId String?
+  home TeamEntry? @relation("Home", fields: [homeId, eventId], references: [id, eventId])
+  awayId String?
+  away TeamEntry? @relation("Away", fields: [awayId, eventId], references: [id, eventId])
+  homeSource String
+  awaySource String
+  results GameResult[]
+  @@unique([eventId, code])
+  @@unique([eventId, court, startsAt])
+}
+model GameResult {
+  id String @id @default(cuid())
+  fixtureId String
+  fixture Fixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  homeId String
+  awayId String
+  homeScore Int
+  awayScore Int
+  status ResultStatus @default(CONFIRMED)
+  recordedAt DateTime @default(now())
+  staffId String
+  staff Staff @relation(fields: [staffId], references: [id])
+  previousCorrections ResultCorrection[] @relation("Previous")
+  replacementCorrections ResultCorrection[] @relation("Replacement")
+  @@index([fixtureId, status])
+}
+model ResultCorrection {
+  id String @id @default(cuid())
+  previousId String
+  previous GameResult @relation("Previous", fields: [previousId], references: [id], onDelete: Cascade)
+  replacementId String?
+  replacement GameResult? @relation("Replacement", fields: [replacementId], references: [id])
+  reason String
+  staffId String
+  staff Staff @relation(fields: [staffId], references: [id])
+  createdAt DateTime @default(now())
+}
+model EventPlacement {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entryId String
+  entry TeamEntry @relation(fields: [entryId, eventId], references: [id, eventId])
+  place Int
+  @@unique([eventId, place])
+  @@unique([eventId, entryId])
+}
+model EventAnnouncement {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  text String
+  published Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+model ImportBatch {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staffId String
+  staff Staff @relation(fields: [staffId], references: [id])
+  filename String
+  status ImportStatus @default(PREVIEW)
+  createdAt DateTime @default(now())
+  committedAt DateTime?
+  rows ImportRow[]
+}
+model ImportRow {
+  id String @id @default(cuid())
+  batchId String
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  line Int
+  team String
+  player String
+  pool String
+  seed Int
+  slot Int
+  @@unique([batchId, line])
+}
+model OperatorAction {
+  id String @id @default(cuid())
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  staffId String
+  staff Staff @relation(fields: [staffId], references: [id])
+  kind String
+  detail String
+  createdAt DateTime @default(now())
+}
